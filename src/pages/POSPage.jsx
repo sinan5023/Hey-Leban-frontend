@@ -10,6 +10,7 @@ import { createOrder, updateOrder, createOrderWithKot, fetchOrderById } from "..
 import { createKot } from "../services/kotService";
 import { createOrderPayment } from "../services/paymentService";
 import { useQueryClient } from "@tanstack/react-query";
+import { useSyncStore } from "../store/syncStore";
 import { useDebouncedValue } from "../hooks/orders/useDebouncedValue";
 import { useTicketSearchQuery } from "../hooks/orders/useTicketSearchQuery";
 import OrdersSearchDropdown from "../components/orders/OrdersSearchDropdown";
@@ -49,9 +50,9 @@ const ProductCard = memo(({ product, quantity, onAdd }) => {
   );
 });
 
-const CartItemCard = memo(({ item, onIncrease, onDecrease }) => {
+const CartItemCard = memo(({ item, onIncrease, onDecrease, disabled }) => {
   return (
-    <div className="rounded-xl border border-[#ded9d3] bg-white p-3 shadow-[0_2px_8px_rgba(61,12,2,0.06)]">
+    <div className={`rounded-xl border border-[#ded9d3] bg-white p-3 shadow-[0_2px_8px_rgba(61,12,2,0.06)] ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
       <div className="mb-2 flex items-start justify-between">
         <div>
           <h4 className="text-sm font-bold leading-tight">
@@ -72,7 +73,8 @@ const CartItemCard = memo(({ item, onIncrease, onDecrease }) => {
         <div className="flex items-center gap-3 rounded-lg border border-[#ded9d3] bg-[#fef9f2] p-1">
           <button
             type="button"
-            onClick={() => onDecrease(item.id)}
+            disabled={disabled}
+            onClick={() => onDecrease && onDecrease(item.id)}
             className="flex h-7 w-7 items-center justify-center rounded-md border border-[#ded9d3] bg-white text-sm"
           >
             −
@@ -82,7 +84,8 @@ const CartItemCard = memo(({ item, onIncrease, onDecrease }) => {
           </span>
           <button
             type="button"
-            onClick={() => onIncrease(item.id)}
+            disabled={disabled}
+            onClick={() => onIncrease && onIncrease(item.id)}
             className="flex h-7 w-7 items-center justify-center rounded-md border border-[#ded9d3] bg-white text-sm"
           >
             +
@@ -136,6 +139,8 @@ function POSPage() {
   // ─── read cart-restored order from store ────────────────────────────────────
   const currentOrderId = useCartStore((state) => state.currentOrderId);
   const currentOrderNo = useCartStore((state) => state.currentOrderNo);
+  const isOfflineOrder = useCartStore((state) => state.isOfflineOrder);
+  const isKotPrinted = useCartStore((state) => state.isKotPrinted);
   const clearCurrentOrder = useCartStore((state) => state.clearCurrentOrder);
 
   const {
@@ -151,7 +156,7 @@ function POSPage() {
   // seed lastSavedOrder from store when navigated from Orders → Go to Cart
   useEffect(() => {
     if (currentOrderId && !lastSavedOrder?.id) {
-      setLastSavedOrder({ id: currentOrderId, orderNo: currentOrderNo });
+      setLastSavedOrder({ id: currentOrderId, orderNo: currentOrderNo, isOffline: isOfflineOrder });
       setIsCartDirty(false);
     }
   }, []); // run only on mount — intentional empty deps
@@ -324,6 +329,58 @@ function POSPage() {
       return;
     }
 
+    // ── OFFLINE QUEUE: New/Update Orders ──
+    if (!lastSavedOrder?.id || lastSavedOrder?.isOffline) {
+      const payload = buildOrderPayload();
+      
+      let localId, localTokenNo, localOrderNo;
+      
+      if (lastSavedOrder?.isOffline) {
+        // Find existing from queue
+        const existingItem = useSyncStore.getState().offlineQueue.find(item => item.localId === lastSavedOrder.id);
+        if (!existingItem) {
+          showToast({ type: "error", title: "Error", message: "Offline order not found in queue." });
+          return;
+        }
+        localId = existingItem.localId;
+        localTokenNo = existingItem.payload.localTokenNo;
+        localOrderNo = existingItem.payload.localOrderNo;
+        
+        useSyncStore.getState().updateQueueItem(localId, {
+          ...existingItem.payload,
+          ...payload,
+          subtotal,
+          totalAmount: total,
+          orderItems: cartItems.map(i => ({ productId: i.productId, name: i.name, price: i.price, quantity: i.quantity, note: i.note, total: i.price * i.quantity }))
+        });
+        showToast({ type: "success", title: "Order updated offline", message: `${localOrderNo}` });
+      } else {
+        localId = crypto.randomUUID();
+        const ids = useSyncStore.getState().getNextLocalIds();
+        localTokenNo = ids.localTokenNo;
+        localOrderNo = ids.localOrderNo;
+        
+        useSyncStore.getState().addToQueue({
+          ...payload,
+          localId,
+          localTokenNo,
+          localOrderNo,
+          kotStatus: "NEW",
+          kotNote: null,
+          payments: [],
+          subtotal,
+          totalAmount: total,
+          orderItems: cartItems.map(i => ({ productId: i.productId, name: i.name, price: i.price, quantity: i.quantity, note: i.note, total: i.price * i.quantity }))
+        });
+        showToast({ type: "success", title: "Order saved offline", message: `${localOrderNo} • Token #${localTokenNo}` });
+      }
+      
+      setLastSavedOrder({ id: localId, orderNo: localOrderNo, isOffline: true });
+      setIsCartDirty(false);
+      return;
+    }
+
+    // ── ONLINE API: Existing Orders ──
     try {
       setSaveLoading(true);
       const isNewOrder = !lastSavedOrder?.id;
@@ -341,13 +398,8 @@ function POSPage() {
         message: `${order.orderNo} • Token #${order.tokenNo}`,
       });
     } catch (err) {
-      const message =
-        err?.response?.data?.message || err?.message || "Failed to save order.";
-      showToast({
-        type: "error",
-        title: "Save failed",
-        message,
-      });
+      const message = err?.response?.data?.message || err?.message || "Failed to save order.";
+      showToast({ type: "error", title: "Save failed", message });
     } finally {
       setSaveLoading(false);
     }
@@ -357,51 +409,104 @@ function POSPage() {
     setLastKot(null);
 
     if (cartItems.length === 0 && !lastSavedOrder?.id) {
-      showToast({
-        type: "error",
-        title: "Cart empty",
-        message: "Please add items before printing KOT.",
-      });
+      showToast({ type: "error", title: "Cart empty", message: "Please add items before printing KOT." });
       return;
     }
 
-    try {
-      setKotLoading(true);
-
-      let order, kot;
-
-      if (!lastSavedOrder?.id) {
-        // ── NEW ORDER: Single API call creates both order + KOT ──
-        const payload = {
-          ...buildOrderPayload(),
-          kotNote: orderNote.trim() || null,
-        };
-        const result = await createOrderWithKot(payload);
-        order = result.order;
-        kot = result.kot;
-      } else if (isCartDirty) {
-        // ── EDITED ORDER: Update order first, then create KOT ──
-        order = await ensureOrderForCart();
-        kot = await createKot(order.id, {
-          note: orderNote.trim() || null,
+    // ── OFFLINE QUEUE: New/Update Orders ──
+    if (!lastSavedOrder?.id || lastSavedOrder?.isOffline) {
+      const payload = buildOrderPayload();
+      const kotNote = orderNote.trim() || null;
+      let localId, localTokenNo, localOrderNo;
+      
+      if (lastSavedOrder?.isOffline) {
+        const existingItem = useSyncStore.getState().offlineQueue.find(item => item.localId === lastSavedOrder.id);
+        if (!existingItem) {
+          showToast({ type: "error", title: "Error", message: "Offline order not found in queue." });
+          return;
+        }
+        localId = existingItem.localId;
+        localTokenNo = existingItem.payload.localTokenNo;
+        localOrderNo = existingItem.payload.localOrderNo;
+        
+        useSyncStore.getState().updateQueueItem(localId, {
+          ...existingItem.payload,
+          ...payload,
+          kotStatus: "PRINTED",
+          kotNo: `KOT-${localTokenNo.replace('L-', '')}`,
+          kotNote: existingItem.payload.kotNote ? `${existingItem.payload.kotNote}\n${kotNote}` : kotNote,
+          subtotal,
+          totalAmount: total,
+          orderItems: cartItems.map(i => ({ productId: i.productId, name: i.name, price: i.price, quantity: i.quantity, note: i.note, total: i.price * i.quantity }))
         });
       } else {
-        // ── REPRINT: Order unchanged, just create KOT (1 API call) ──
-        order = lastSavedOrder;
-        kot = await createKot(order.id, {
-          note: orderNote.trim() || null,
+        localId = crypto.randomUUID();
+        const ids = useSyncStore.getState().getNextLocalIds();
+        localTokenNo = ids.localTokenNo;
+        localOrderNo = ids.localOrderNo;
+        
+        useSyncStore.getState().addToQueue({
+          ...payload,
+          localId,
+          localTokenNo,
+          localOrderNo,
+          kotStatus: "PRINTED",
+          kotNo: `KOT-${localTokenNo.replace('L-', '')}`,
+          kotNote,
+          payments: [],
+          subtotal,
+          totalAmount: total,
+          orderItems: cartItems.map(i => ({ productId: i.productId, name: i.name, price: i.price, quantity: i.quantity, note: i.note, total: i.price * i.quantity }))
         });
       }
+      
+      const simulatedKot = {
+        kotNo: `KOT-${localTokenNo.replace('L-', '')}`,
+        status: "PRINTED",
+        timesPrinted: 1,
+        note: kotNote,
+        printedAt: new Date(),
+        kotItems: cartItems.map(i => ({ productId: i.productId, name: i.name, quantity: i.quantity, note: i.note }))
+      };
+      
+      const simulatedOrder = {
+        orderNo: localOrderNo,
+        tokenNo: localTokenNo.replace('L-', ''),
+        orderType: payload.orderType,
+        note: payload.note,
+        subtotal,
+        discountAmount: Number(discountAmount || 0),
+        totalAmount: total,
+        payments: lastSavedOrder?.isOffline ? useSyncStore.getState().offlineQueue.find(item => item.localId === localId)?.payload?.payments || [] : [],
+        orderItems: cartItems.map(i => ({ productId: i.productId, name: i.name, price: i.price, quantity: i.quantity, note: i.note, total: i.price * i.quantity }))
+      };
+      
+      printBoth(simulatedKot, simulatedOrder);
+      
+      showToast({ type: "success", title: "KOT printed offline", message: simulatedKot.kotNo });
+      setLastSavedOrder({ id: localId, orderNo: localOrderNo, isOffline: true });
+      setIsCartDirty(false);
+      return;
+    }
 
-      // Ensure we have the full order payload before printing (restored carts only have {id, orderNo})
+    // ── ONLINE API: Existing Orders ──
+    try {
+      setKotLoading(true);
+      let order, kot;
+
+      if (isCartDirty) {
+        order = await ensureOrderForCart();
+        kot = await createKot(order.id, { note: orderNote.trim() || null });
+      } else {
+        order = lastSavedOrder;
+        kot = await createKot(order.id, { note: orderNote.trim() || null });
+      }
+
       if (!order.orderItems || !order.createdAt) {
         order = await fetchOrderById(order.id);
       }
 
-      // Fire print IMMEDIATELY
       printBoth(kot, order);
-
-      // Update UI state
       setLastSavedOrder(order);
       setLastKot(kot);
       setIsCartDirty(false);
@@ -412,19 +517,11 @@ function POSPage() {
         message: `${kot.kotNo} • Times printed: ${kot.timesPrinted}`,
       });
 
-      // Background cache refresh
       queryClient.invalidateQueries({ queryKey: ["orders"] });
-      if (order?.id) {
-        queryClient.invalidateQueries({ queryKey: ["order", order.id] });
-      }
+      if (order?.id) queryClient.invalidateQueries({ queryKey: ["order", order.id] });
     } catch (err) {
-      const message =
-        err?.response?.data?.message || err?.message || "Failed to print KOT.";
-      showToast({
-        type: "error",
-        title: "KOT failed",
-        message,
-      });
+      const message = err?.response?.data?.message || err?.message || "Failed to print KOT.";
+      showToast({ type: "error", title: "KOT failed", message });
     } finally {
       setKotLoading(false);
     }
@@ -433,47 +530,81 @@ function POSPage() {
   // payment section
   const [paymentLoading, setPaymentLoading] = useState(false);
 
-  const handleConfirmPayment = async (payload) => {
+  const handleConfirmPayment = async (paymentArgs) => {
+    // ── OFFLINE QUEUE: New/Update Orders ──
+    if (!lastSavedOrder?.id || lastSavedOrder?.isOffline) {
+      const payload = buildOrderPayload();
+      let localId, localTokenNo, localOrderNo;
+      
+      if (lastSavedOrder?.isOffline) {
+        const existingItem = useSyncStore.getState().offlineQueue.find(item => item.localId === lastSavedOrder.id);
+        if (!existingItem) {
+          showToast({ type: "error", title: "Error", message: "Offline order not found in queue." });
+          return;
+        }
+        localId = existingItem.localId;
+        localTokenNo = existingItem.payload.localTokenNo;
+        localOrderNo = existingItem.payload.localOrderNo;
+        
+        const currentPayments = existingItem.payload.payments || [];
+        const newPayments = paymentArgs.type === "UNPAID" ? currentPayments : [...currentPayments, ...paymentArgs.payments];
+        
+        useSyncStore.getState().updateQueueItem(localId, {
+          ...existingItem.payload,
+          ...payload,
+          payments: newPayments,
+          subtotal,
+          totalAmount: total,
+          orderItems: cartItems.map(i => ({ productId: i.productId, name: i.name, price: i.price, quantity: i.quantity, note: i.note, total: i.price * i.quantity }))
+        });
+      } else {
+        localId = crypto.randomUUID();
+        const ids = useSyncStore.getState().getNextLocalIds();
+        localTokenNo = ids.localTokenNo;
+        localOrderNo = ids.localOrderNo;
+        
+        useSyncStore.getState().addToQueue({
+          ...payload,
+          localId,
+          localTokenNo,
+          localOrderNo,
+          kotNote: null,
+          payments: paymentArgs.type === "UNPAID" ? [] : paymentArgs.payments,
+          subtotal,
+          totalAmount: total,
+          orderItems: cartItems.map(i => ({ productId: i.productId, name: i.name, price: i.price, quantity: i.quantity, note: i.note, total: i.price * i.quantity }))
+        });
+      }
+      
+      showToast({ type: "success", title: paymentArgs.type === "UNPAID" ? "Order saved offline" : "Payment saved offline", message: localOrderNo });
+      setTimeout(() => resetCurrentOrderFlow(), 500);
+      return;
+    }
+
+    // ── ONLINE API: Existing Orders ──
     try {
       setPaymentLoading(true);
       const order = await ensureOrderForCart();
 
-      if (payload.type === "UNPAID") {
-        showToast({
-          type: "success",
-          title: "Order saved",
-          message: `${order.orderNo} saved as unpaid.`,
-        });
-        setTimeout(() => {
-          resetCurrentOrderFlow();
-        }, 1000);
+      if (paymentArgs.type === "UNPAID") {
+        showToast({ type: "success", title: "Order saved", message: `${order.orderNo} saved as unpaid.` });
+        setTimeout(() => resetCurrentOrderFlow(), 1000);
         return order;
       }
 
       const response = await createOrderPayment(order.id, {
-        payments: payload.payments,
+        payments: paymentArgs.payments,
       });
 
       await queryClient.invalidateQueries({ queryKey: ["orders"] });
       await queryClient.invalidateQueries({ queryKey: ["order", order.id] });
 
-      showToast({
-        type: "success",
-        title: "Payment completed",
-        message: `${response.orderNo || order.orderNo} paid successfully.`,
-      });
-
-      setTimeout(() => {
-        resetCurrentOrderFlow();
-      }, 1000);
+      showToast({ type: "success", title: "Payment completed", message: `${response.orderNo || order.orderNo} paid successfully.` });
+      setTimeout(() => resetCurrentOrderFlow(), 1000);
 
       return response;
     } catch (err) {
-      const message =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        err?.message ||
-        "Failed to complete payment.";
+      const message = err?.response?.data?.message || err?.response?.data?.error || err?.message || "Failed to complete payment.";
       showToast({ type: "error", title: "Payment failed", message });
       throw err;
     } finally {
@@ -734,7 +865,7 @@ function POSPage() {
                     key={product.id}
                     product={product}
                     quantity={cartQtyMap[product.id] || 0}
-                    onAdd={addToCart}
+                    onAdd={isKotPrinted ? undefined : addToCart}
                   />
                 ))}
             </div>
@@ -747,33 +878,36 @@ function POSPage() {
               <div className="flex items-center overflow-hidden rounded-xl border border-[#ded9d3] bg-white">
                 <button
                   type="button"
+                  disabled={isKotPrinted}
                   onClick={() => setOrderType("DINE_IN")}
                   className={`flex-1 py-2 text-xs font-bold ${orderType === "DINE_IN"
                       ? "bg-[#E8A020] text-white"
                       : "text-[#3d0c02]/70"
-                    }`}
+                    } ${isKotPrinted ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
                   Dine in
                 </button>
                 <div className="h-5 w-px bg-[#ded9d3]" />
                 <button
                   type="button"
+                  disabled={isKotPrinted}
                   onClick={() => setOrderType("DELIVERY")}
                   className={`flex-1 py-2 text-xs font-bold ${orderType === "DELIVERY"
                       ? "bg-[#E8A020] text-white"
                       : "text-[#3d0c02]/70"
-                    }`}
+                    } ${isKotPrinted ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
                   Delivery
                 </button>
                 <div className="h-5 w-px bg-[#ded9d3]" />
                 <button
                   type="button"
+                  disabled={isKotPrinted}
                   onClick={() => setOrderType("TAKEOUT")}
                   className={`flex-1 py-2 text-xs font-bold ${orderType === "TAKEOUT"
                       ? "bg-[#E8A020] text-white"
                       : "text-[#3d0c02]/70"
-                    }`}
+                    } ${isKotPrinted ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
                   Takeout
                 </button>
@@ -786,8 +920,9 @@ function POSPage() {
                 <h2 className="text-base font-bold">Cart ({totalCartQty})</h2>
                 <button
                   type="button"
+                  disabled={isKotPrinted}
                   onClick={() => setShowOrderNote((prev) => !prev)}
-                  className="text-xs font-bold text-[#E8A020]"
+                  className={`text-xs font-bold text-[#E8A020] ${isKotPrinted ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
                   ✎ Add Note
                 </button>
@@ -809,10 +944,11 @@ function POSPage() {
                 </label>
                 <textarea
                   rows="2"
+                  disabled={isKotPrinted}
                   value={orderNote}
                   onChange={(e) => setOrderNote(e.target.value)}
                   placeholder="Example: No onion, urgent order..."
-                  className="w-full rounded-xl border border-[#ded9d3] bg-[#fef9f2] p-2 text-xs outline-none focus:border-[#E8A020]"
+                  className={`w-full rounded-xl border border-[#ded9d3] bg-[#fef9f2] p-2 text-xs outline-none focus:border-[#E8A020] ${isKotPrinted ? "opacity-50 cursor-not-allowed" : ""}`}
                 />
               </div>
             )}
@@ -828,8 +964,9 @@ function POSPage() {
                   <CartItemCard
                     key={item.id}
                     item={item}
-                    onIncrease={increaseQty}
-                    onDecrease={decreaseQty}
+                    disabled={isKotPrinted}
+                    onIncrease={isKotPrinted ? undefined : increaseQty}
+                    onDecrease={isKotPrinted ? undefined : decreaseQty}
                   />
                 ))
               )}
@@ -858,8 +995,9 @@ function POSPage() {
                     <span className="opacity-70">Discount</span>
                     <button
                       type="button"
+                      disabled={isKotPrinted}
                       onClick={() => setShowDiscountEditor((prev) => !prev)}
-                      className="flex h-6 w-6 items-center justify-center rounded-full border border-[#ded9d3] bg-[#f8f3ec] text-xs text-[#3d0c02]"
+                      className={`flex h-6 w-6 items-center justify-center rounded-full border border-[#ded9d3] bg-[#f8f3ec] text-xs text-[#3d0c02] ${isKotPrinted ? "opacity-50 cursor-not-allowed" : ""}`}
                       title="Edit discount"
                     >
                       ✎

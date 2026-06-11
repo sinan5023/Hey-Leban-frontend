@@ -13,6 +13,7 @@ import OrdersFilters from "../components/orders/OrdersFilters";
 import OrdersList from "../components/orders/OrdersList";
 import OrderDetailsPanel from "../components/orders/OrderDetailsPanel";
 import { useCartStore } from "../store/cartStore";
+import { useSyncStore } from "../store/syncStore";
 import { printKOT, printBill } from "../utils/printHelpers";
 
 function OrdersPage() {
@@ -20,6 +21,7 @@ function OrdersPage() {
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const hydrateFromOrder = useCartStore((state) => state.hydrateFromOrder);
+  const offlineQueue = useSyncStore((state) => state.offlineQueue);
 
   const [actionState, setActionState] = useState({ orderId: null, type: "" });
   const [cancelModal, setCancelModal] = useState({ open: false, order: null });
@@ -61,13 +63,38 @@ function OrdersPage() {
     { refetchOnMount: "always" }
   );
 
- const selectedOrderQuery = useQuery({
-  queryKey: ["order", params.selectedOrderId],
-  queryFn: () => fetchOrderById(params.selectedOrderId),
-  enabled: !!params.selectedOrderId,
-  refetchOnMount: "always",
-  staleTime: 0,
-});
+  const selectedOfflineOrder = useMemo(() => {
+    const offlineItem = offlineQueue.find(item => item.localId === params.selectedOrderId);
+    if (!offlineItem) return null;
+    const p = offlineItem.payload;
+    return {
+      id: offlineItem.localId,
+      orderNo: p.localOrderNo,
+      tokenNo: p.localTokenNo ? p.localTokenNo.replace("L-", "") : "",
+      orderType: p.orderType,
+      status: p.payments?.length > 0 ? "COMPLETED" : "OPEN",
+      kotStatus: "PRINTED",
+      subtotal: p.subtotal || 0,
+      discountAmount: p.discountAmount || 0,
+      totalAmount: p.totalAmount || 0,
+      totalPaid: p.payments?.reduce((sum, pay) => sum + Number(pay.amount), 0) || 0,
+      balanceDue: Math.max(0, (p.totalAmount || 0) - (p.payments?.reduce((sum, pay) => sum + Number(pay.amount), 0) || 0)),
+      note: p.note,
+      createdAt: p.createdAt || new Date().toISOString(),
+      orderItems: p.orderItems || [],
+      payments: p.payments || [],
+      isOffline: true,
+      syncStatus: offlineItem.status,
+    };
+  }, [offlineQueue, params.selectedOrderId]);
+
+  const selectedOrderQuery = useQuery({
+    queryKey: ["order", params.selectedOrderId],
+    queryFn: () => fetchOrderById(params.selectedOrderId),
+    enabled: !!params.selectedOrderId && !selectedOfflineOrder,
+    refetchOnMount: "always",
+    staleTime: 0,
+  });
 
   useEffect(() => {
   const selected = selectedOrderQuery.data;
@@ -82,21 +109,50 @@ function OrdersPage() {
   const rawOrders = ordersQuery.data?.data || [];
   const pagination = ordersQuery.data?.pagination || null;
 
- const orders = useMemo(() => {
-  return rawOrders.map((o) => {
-    const cached = orderDetailCache[o.id];
-    if (!cached) return o;
+  const orders = useMemo(() => {
+    // 1. Format offline orders to match API response shape (reverse to show newest first)
+    const offlineOrders = [...offlineQueue].reverse().map((item) => {
+      const p = item.payload;
+      return {
+        id: item.localId,
+        orderNo: p.localOrderNo,
+        tokenNo: p.localTokenNo ? p.localTokenNo.replace("L-", "") : "",
+        orderType: p.orderType,
+        status: p.payments?.length > 0 ? "COMPLETED" : "OPEN",
+        kotStatus: p.kotStatus || "NEW",
+        kot: { kotNo: p.kotNo || null },
+        subtotal: p.subtotal || 0,
+        discountAmount: p.discountAmount || 0,
+        totalAmount: p.totalAmount || 0,
+        totalPaid: p.payments?.reduce((sum, pay) => sum + Number(pay.amount), 0) || 0,
+        balanceDue: Math.max(0, (p.totalAmount || 0) - (p.payments?.reduce((sum, pay) => sum + Number(pay.amount), 0) || 0)),
+        note: p.note,
+        createdAt: p.createdAt || new Date().toISOString(),
+        orderItems: p.orderItems || [],
+        payments: p.payments || [],
+        isOffline: true,
+        syncStatus: item.status,
+      };
+    });
 
-    return {
-      ...o,
-      totalPaid: cached.totalPaid ?? o.totalPaid,
-      balanceDue: cached.balanceDue ?? o.balanceDue,
-      payments: cached.payments ?? o.payments ?? [],
-      status: cached.status ?? o.status,
-      kotStatus: cached.kotStatus ?? o.kotStatus,
-    };
-  });
-}, [rawOrders, orderDetailCache]);
+    // 2. Map online orders and merge with cache
+    const onlineOrders = rawOrders.map((o) => {
+      const cached = orderDetailCache[o.id];
+      if (!cached) return o;
+
+      return {
+        ...o,
+        totalPaid: cached.totalPaid ?? o.totalPaid,
+        balanceDue: cached.balanceDue ?? o.balanceDue,
+        payments: cached.payments ?? o.payments ?? [],
+        status: cached.status ?? o.status,
+        kotStatus: cached.kotStatus ?? o.kotStatus,
+      };
+    });
+
+    // 3. Prepend offline orders
+    return [...offlineOrders, ...onlineOrders];
+  }, [rawOrders, orderDetailCache, offlineQueue]);
 
   useEffect(() => {
     if (!params.selectedOrderId && orders.length > 0) {
@@ -138,18 +194,25 @@ function OrdersPage() {
     const isFullyPaid = total > 0 && (balance <= 0 || total - paid <= 0);
     if (isFullyPaid) return;
 
-    setActionState({ orderId: order.id, type: "cart" });
-    try {
-      const fullOrder =
-        selectedOrderQuery.data?.id === order.id
-          ? selectedOrderQuery.data
-          : await fetchOrderById(order.id);
-
-      hydrateFromOrder(fullOrder);
-      navigate("/pos");
-    } finally {
-      setActionState({ orderId: null, type: "" });
+    let fullOrder = order;
+    
+    if (!order.isOffline) {
+      setActionState({ orderId: order.id, type: "cart" });
+      try {
+        fullOrder =
+          selectedOrderQuery.data?.id === order.id
+            ? selectedOrderQuery.data
+            : await fetchOrderById(order.id);
+      } catch (err) {
+        showToast("error", "Error", "Failed to load order.");
+        setActionState({ orderId: null, type: "" });
+        return;
+      }
     }
+
+    hydrateFromOrder(fullOrder);
+    navigate("/pos");
+    setActionState({ orderId: null, type: "" });
   };
 
   const handleCompletePayment = (order) => handleGoToCart(order);
@@ -175,14 +238,18 @@ function OrdersPage() {
     },
   });
 
- const handlePrintKot = async (order) => {
-  setActionState({ orderId: order.id, type: "kot" });
-  try {
-    // Always fetch the full order detail for printing
-    const fullOrder =
-      selectedOrderQuery.data?.id === order.id
-        ? selectedOrderQuery.data
-        : await fetchOrderById(order.id);
+  const handlePrintKot = async (order) => {
+    if (order.isOffline) {
+      showToast("error", "Cannot Print", "Offline orders cannot be reprinted until synced.");
+      return;
+    }
+    setActionState({ orderId: order.id, type: "kot" });
+    try {
+      // Always fetch the full order detail for printing
+      const fullOrder =
+        selectedOrderQuery.data?.id === order.id
+          ? selectedOrderQuery.data
+          : await fetchOrderById(order.id);
 
     const kot = await printKotMutation.mutateAsync({
       orderId: order.id,
@@ -222,6 +289,7 @@ const handlePrintBill = async (order) => {
 
   const handleCancelOrderClick = (order) => {
     if (order.status === "CANCELLED") return;
+
     const paid = Number(order.totalPaid ?? 0);
     if (paid > 0) {
       showToast(
@@ -242,6 +310,15 @@ const handlePrintBill = async (order) => {
       showToast("error", "Reason Required", "Please enter at least 3 characters for the cancel reason.");
       return;
     }
+
+    if (cancelModal.order.isOffline) {
+      useSyncStore.getState().removeFromQueue(cancelModal.order.id);
+      setCancelModal({ open: false, order: null });
+      setCancelReason("");
+      showToast("success", "Order Deleted", "Offline order was permanently deleted.");
+      return;
+    }
+
     setActionState({ orderId: cancelModal.order.id, type: "cancel" });
     try {
       await cancelMutation.mutateAsync({
@@ -289,8 +366,8 @@ const handlePrintBill = async (order) => {
           </div>
 
           <OrderDetailsPanel
-            order={selectedOrderQuery.data || null}
-            loading={selectedOrderQuery.isLoading}
+            order={selectedOfflineOrder || selectedOrderQuery.data || null}
+            loading={selectedOrderQuery.isLoading && !selectedOfflineOrder}
             onGoToCart={handleGoToCart}
             onCompletePayment={handleCompletePayment}
             onPrintKot={handlePrintKot}

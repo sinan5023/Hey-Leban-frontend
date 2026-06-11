@@ -60,12 +60,13 @@ function OrderDetailsPanel({
     );
   }
 
-  const payMeta     = derivePaymentMeta(order);
-  const isCancelled = order.status === "CANCELLED";
-  const canPay      = !isCancelled && !payMeta.isPaid;
-  const canEdit     = !isCancelled && !payMeta.isPaid;
-  const canKot      = !isCancelled;
-  const canCancel   = !isCancelled && !payMeta.isPaid;
+  const payMeta      = derivePaymentMeta(order);
+  const isCancelled  = order.status === "CANCELLED";
+  const isKotPrinted = order.kotStatus === "PRINTED" || order.kotStatus === "REPRINTED";
+  const canPay       = !isCancelled && !payMeta.isPaid;
+  const canEdit      = !isCancelled && !payMeta.isPaid && !isKotPrinted;
+  const canKot       = !isCancelled;
+  const canCancel    = !isCancelled && !payMeta.isPaid;
  const kotLabel =
   order.kotStatus === "PRINTED" || order.kotStatus === "REPRINTED" || order.kot?.kotNo
     ? "KOT Reprint"
@@ -134,7 +135,7 @@ function OrderDetailsPanel({
           type="button"
           disabled={!canEdit || actionLoading}
           onClick={() => onGoToCart(order)}
-          title={payMeta.isPaid ? "Paid orders cannot be edited" : isCancelled ? "Cancelled orders cannot be edited" : ""}
+          title={payMeta.isPaid ? "Paid orders cannot be edited" : isKotPrinted ? "Orders with printed KOTs cannot be edited" : isCancelled ? "Cancelled orders cannot be edited" : ""}
           className={`rounded-xl px-4 py-2 text-sm font-bold ${
             !canEdit || actionLoading
               ? "cursor-not-allowed border border-[#ded9d3] bg-gray-100 text-gray-400"

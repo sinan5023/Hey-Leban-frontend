@@ -1,8 +1,30 @@
 import { useNavigate } from "react-router-dom";
 import SettingsCard from "../components/settings/SettingsCard";
+import { useState } from "react";
+import { useSyncStore } from "../store/syncStore";
+import { createOrderWithKot } from "../services/orderService";
 
 function SettingsPage() {
   const navigate = useNavigate();
+  const offlineQueue = useSyncStore((state) => state.offlineQueue);
+  const removeFromQueue = useSyncStore((state) => state.removeFromQueue);
+  const markFailed = useSyncStore((state) => state.markFailed);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleSync = async () => {
+    if (offlineQueue.length === 0) return;
+    setIsSyncing(true);
+    for (const item of offlineQueue) {
+      try {
+        await createOrderWithKot(item.payload);
+        removeFromQueue(item.localId);
+      } catch (error) {
+        console.error("Sync failed for", item.localId, error);
+        markFailed(item.localId, error);
+      }
+    }
+    setIsSyncing(false);
+  };
 
   return (
     <div className="min-h-screen bg-[#fef9f2] font-sans text-[#1d1c18]">
@@ -136,23 +158,29 @@ function SettingsPage() {
 
               <div className="flex items-center gap-6 rounded-2xl border border-[#d9c1bc]/20 bg-[#f8f3ec] p-6">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white shadow-sm">
-                  <span className="text-[18px]">☁️</span>
+                  <span className="text-[18px]">🔄</span>
                 </div>
 
                 <div className="flex-grow">
                   <p className="text-[18px] font-bold text-[#1d1c18]">
-                    Data Backup
+                    Sync Offline Orders
                   </p>
                   <p className="text-[12px] text-[#54433f]/70">
-                    Last backup: 2 hours ago
+                    {offlineQueue.length} pending orders to sync
                   </p>
                 </div>
 
                 <button
                   type="button"
-                  className="shrink-0 rounded-lg bg-[#3d0c02] px-4 py-2 text-[14px] font-bold text-white"
+                  onClick={handleSync}
+                  disabled={isSyncing || offlineQueue.length === 0}
+                  className={`shrink-0 rounded-lg px-4 py-2 text-[14px] font-bold text-white ${
+                    isSyncing || offlineQueue.length === 0
+                      ? "bg-gray-400 cursor-not-allowed"
+                      : "bg-[#3d0c02]"
+                  }`}
                 >
-                  Backup Now
+                  {isSyncing ? "Syncing..." : "Sync Now"}
                 </button>
               </div>
             </div>

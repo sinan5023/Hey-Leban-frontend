@@ -10,6 +10,8 @@ export const useCartStore = create((set, get) => ({
   discountAmount: 0,
   currentOrderId: null,
   currentOrderNo: null,
+  isOfflineOrder: false,
+  isKotPrinted: false,
 
   setPaymentMethod: (method) => set({ paymentMethod: method }),
   setCashReceived: (value) => set({ cashReceived: value }),
@@ -28,7 +30,7 @@ export const useCartStore = create((set, get) => ({
     }),
 
   clearCurrentOrder: () =>
-    set({ currentOrderId: null, currentOrderNo: null }),
+    set({ currentOrderId: null, currentOrderNo: null, isOfflineOrder: false, isKotPrinted: false }),
 
   // ─── restore an existing order into the cart ─────────────────────────────
   hydrateFromOrder: (order) => {
@@ -53,6 +55,8 @@ export const useCartStore = create((set, get) => ({
       discountAmount: Number(order.discountAmount || 0),
       currentOrderId: order.id || null,
       currentOrderNo: order.orderNo || null,
+      isOfflineOrder: !!order.isOffline,
+      isKotPrinted: order.kotStatus === "PRINTED" || order.kotStatus === "REPRINTED",
     });
   },
 
@@ -95,6 +99,10 @@ export const useCartStore = create((set, get) => ({
       const existing = state.products[productId];
       if (!existing) return state;
       if (existing.qty <= 1) {
+        // Bug fix: prevent removing the very last item of an existing order
+        if (state.currentOrderId && Object.keys(state.products).length <= 1) {
+          return state;
+        }
         const updated = { ...state.products };
         delete updated[productId];
         return { products: updated };
@@ -124,6 +132,8 @@ export const useCartStore = create((set, get) => ({
       discountAmount: 0,
       currentOrderId: null,
       currentOrderNo: null,
+      isOfflineOrder: false,
+      isKotPrinted: false,
     }),
 
   getCartItems: () => {

@@ -62,6 +62,45 @@ export default function BusinessReportPage() {
         { category: "Rent", amount: 200, date: "Oct 10, 2023", note: "Daily stall prorated rent" }
       ];
 
+  const maxExpenseAmount = Math.max(...expensesList.map(e => e.amount), 1);
+
+  // Top Sellers
+  const topSellers = report.orders?.topSellingProducts && report.orders.topSellingProducts.length > 0 
+    ? report.orders.topSellingProducts.map(item => ({
+        itemName: item.name || "Unknown Item",
+        quantitySold: Number(item.quantity || 0)
+      }))
+    : [
+        { itemName: "Signature Chocolate Cake", quantitySold: 42 },
+        { itemName: "Almond Croissant", quantitySold: 38 },
+        { itemName: "Espresso Truffle", quantitySold: 25 },
+        { itemName: "Vanilla Bean Macaron", quantitySold: 20 }
+      ];
+
+  const maxTopSellerQuantity = Math.max(...topSellers.map(i => i.quantitySold), 1);
+
+  // Peak Hours Calculation
+  const peakHoursRaw = report.orders?.peakHours || [];
+  let startHour = 9; // Default 9 AM
+  if (peakHoursRaw.length > 0) {
+    const hours = peakHoursRaw.map(p => parseInt(p.hour.split(':')[0], 10)).filter(h => !isNaN(h));
+    if (hours.length > 0) {
+      const minHr = Math.min(...hours);
+      startHour = Math.max(0, minHr - 2); 
+    }
+  }
+  const hoursData = Array.from({ length: 10 }, (_, i) => {
+    const hour24 = startHour + i;
+    const hourStr = `${hour24.toString().padStart(2, '0')}:00`;
+    const found = peakHoursRaw.find(p => p.hour === hourStr);
+    const orderCount = found ? found.orderCount : 0;
+    const ampm = hour24 >= 12 ? 'pm' : 'am';
+    const hour12 = hour24 > 12 ? hour24 - 12 : hour24 === 0 ? 12 : hour24;
+    return { hourStr, label: `${hour12}${ampm}`, count: orderCount };
+  });
+  const maxPeakCount = Math.max(...hoursData.map(h => h.count), 1);
+  const peakThreshold = maxPeakCount > 1 ? maxPeakCount * 0.7 : 9999;
+
   if (isLoading) {
     return <div className="min-h-screen bg-[#fef9f2] flex items-center justify-center">Loading Report...</div>;
   }
@@ -191,6 +230,28 @@ export default function BusinessReportPage() {
                 <p className="text-xl font-extrabold text-[#815500]">{ordersPerformance.due}</p>
               </div>
             </div>
+            
+            <h3 className="text-sm font-bold text-[#54433f] mb-4">Peak Hours (Volume)</h3>
+            <div className="flex items-end justify-between h-32 gap-1 px-2">
+              {hoursData.map((hr, idx) => {
+                const isPeak = hr.count > 0 && hr.count >= peakThreshold;
+                const heightPct = Math.max((hr.count / maxPeakCount) * 100, 5); // min 5% height for visual
+                return (
+                  <div key={idx} className={`w-full rounded-t-sm group relative transition-colors ${isPeak ? 'bg-[#feb234]' : 'bg-[#f2ede6] hover:bg-[#feb234]'}`} style={{ height: `${heightPct}%` }}>
+                    <div className={`absolute -top-6 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded font-bold text-[10px] whitespace-nowrap ${isPeak ? 'opacity-100 bg-[#0e0100] text-white' : 'opacity-0 group-hover:opacity-100 bg-[#0e0100] text-white'}`}>
+                      {isPeak ? 'Peak' : hr.label}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex justify-between text-[10px] text-[#54433f] font-bold mt-2 px-1">
+              <span>{hoursData[0].label.toUpperCase()}</span>
+              <span>{hoursData[2].label.toUpperCase()}</span>
+              <span>{hoursData[5].label.toUpperCase()}</span>
+              <span>{hoursData[7].label.toUpperCase()}</span>
+              <span>{hoursData[9].label.toUpperCase()}</span>
+            </div>
           </div>
 
           <div className="bg-white rounded-2xl p-6 shadow-[0_4px_16px_rgba(61,12,2,0.06)] border border-[#f2ede6] flex flex-col">
@@ -226,12 +287,108 @@ export default function BusinessReportPage() {
           </div>
         </div>
 
+        <div className="bg-white rounded-2xl shadow-[0_4px_16px_rgba(61,12,2,0.06)] border border-[#f2ede6] overflow-hidden mb-6">
+          <div className="px-6 py-4 border-b border-[#f2ede6] flex justify-between items-center">
+            <h2 className="font-bold text-lg text-[#0e0100]">Top Sellers Items</h2>
+            <div className="flex gap-4">
+              <div className="flex items-center gap-1">
+                <span className="w-3 h-3 rounded-full bg-[#3d0c02]"></span>
+                <span className="text-[10px] font-bold text-[#54433f] uppercase">Top 1</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-3 h-3 rounded-full bg-[#feb234]"></span>
+                <span className="text-[10px] font-bold text-[#54433f] uppercase">Top 2</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-3 h-3 rounded-full bg-[#86736e]"></span>
+                <span className="text-[10px] font-bold text-[#54433f] uppercase">Top 3</span>
+              </div>
+            </div>
+          </div>
+          <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="space-y-6">
+              {topSellers.slice(0, 4).map((item, idx) => {
+                const colors = ['bg-[#3d0c02]', 'bg-[#feb234]', 'bg-[#86736e]', 'bg-[#b27947]'];
+                return (
+                  <div key={idx}>
+                    <div className="flex justify-between text-xs font-bold mb-2">
+                      <span className="truncate pr-2">{item.itemName}</span>
+                      <span className="text-[#0e0100]">{item.quantitySold} units</span>
+                    </div>
+                    <div className="h-3 w-full bg-[#f2ede6] rounded-full overflow-hidden">
+                      <div className={`h-full ${colors[idx % colors.length]}`} style={{ width: `${(item.quantitySold / maxTopSellerQuantity) * 100}%` }}></div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            
+            <div className="lg:col-span-2 overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="text-[11px] font-bold text-[#54433f] uppercase tracking-wider border-b border-[#f2ede6]">
+                    <th className="pb-3 px-2">Item Name</th>
+                    <th className="pb-3 px-2">Quantity Sold</th>
+                    <th className="pb-3 px-2 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#f2ede6]">
+                  {topSellers.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-[#f2ede6] text-sm">
+                      <td className="py-3 px-2 font-bold text-[#0e0100]">{item.itemName}</td>
+                      <td className="py-3 px-2 text-[#54433f] font-medium">{item.quantitySold} units</td>
+                      <td className="py-3 px-2 text-right">
+                        <button className="text-[#86736e] hover:text-[#0e0100] transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 inline" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                          </svg>
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
         <div className="bg-white rounded-2xl shadow-[0_4px_16px_rgba(61,12,2,0.06)] border border-[#f2ede6] overflow-hidden">
           <div className="px-6 py-4 border-b border-[#f2ede6] flex justify-between items-center">
             <h2 className="font-bold text-lg text-[#0e0100]">Operating Expenses Breakdown</h2>
+            <div className="flex gap-4">
+              <div className="flex items-center gap-1">
+                <span className="w-3 h-3 rounded-full bg-[#3d0c02]"></span>
+                <span className="text-[10px] font-bold text-[#54433f] uppercase">Staff</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-3 h-3 rounded-full bg-[#feb234]"></span>
+                <span className="text-[10px] font-bold text-[#54433f] uppercase">Admin</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-3 h-3 rounded-full bg-[#86736e]"></span>
+                <span className="text-[10px] font-bold text-[#54433f] uppercase">Utility</span>
+              </div>
+            </div>
           </div>
-          <div className="p-6">
-            <div className="overflow-x-auto">
+          <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="space-y-6">
+              {expensesList.slice(0, 4).map((exp, idx) => {
+                const colors = ['bg-[#3d0c02]', 'bg-[#feb234]', 'bg-[#86736e]', 'bg-[#b27947]'];
+                return (
+                  <div key={idx}>
+                    <div className="flex justify-between text-xs font-bold mb-2">
+                      <span className="truncate pr-2">{exp.category}</span>
+                      <span className="text-[#0e0100]">₹{exp.amount.toFixed(2)}</span>
+                    </div>
+                    <div className="h-3 w-full bg-[#f2ede6] rounded-full overflow-hidden">
+                      <div className={`h-full ${colors[idx % colors.length]}`} style={{ width: `${(exp.amount / maxExpenseAmount) * 100}%` }}></div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            
+            <div className="lg:col-span-2 overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="text-[11px] font-bold text-[#54433f] uppercase tracking-wider border-b border-[#f2ede6]">
@@ -239,6 +396,7 @@ export default function BusinessReportPage() {
                     <th className="pb-3 px-2">Amount</th>
                     <th className="pb-3 px-2">Date</th>
                     <th className="pb-3 px-2">Note / Vendor</th>
+                    <th className="pb-3 px-2 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#f2ede6]">
@@ -248,6 +406,13 @@ export default function BusinessReportPage() {
                       <td className="py-3 px-2 font-bold">₹{exp.amount.toFixed(2)}</td>
                       <td className="py-3 px-2 text-[#54433f]">{exp.date}</td>
                       <td className="py-3 px-2 text-xs">{exp.note}</td>
+                      <td className="py-3 px-2 text-right">
+                        <button className="text-[#86736e] hover:text-[#0e0100] transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 inline" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                          </svg>
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

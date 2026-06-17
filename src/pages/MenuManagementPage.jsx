@@ -30,6 +30,12 @@ function MenuManagementPage() {
         type: null,
         target: null,
     });
+    const [editCategoryState, setEditCategoryState] = useState({
+        open: false,
+        category: null,
+        name: "",
+        sortOrder: "",
+    });
 
     useEffect(() => {
         if (!toast) return;
@@ -203,11 +209,20 @@ function MenuManagementPage() {
         }
     };
 
-    const handleEditCategory = async (category) => {
-        const nextName = window.prompt("Update category name", category.name);
-        if (nextName === null) return;
+    const handleEditCategory = (category) => {
+        setEditCategoryState({
+            open: true,
+            category,
+            name: category.name || "",
+            sortOrder: category.sortOrder === null || category.sortOrder === undefined ? "" : String(category.sortOrder),
+        });
+    };
 
-        const trimmedName = nextName.trim();
+    const handleSaveCategoryEdit = async () => {
+        const { category, name, sortOrder } = editCategoryState;
+        if (!category) return;
+
+        const trimmedName = name.trim();
         if (!trimmedName) {
             showToast({
                 type: "error",
@@ -222,7 +237,7 @@ function MenuManagementPage() {
                 id: category.id,
                 payload: {
                     name: trimmedName,
-                    sortOrder: category.sortOrder ?? 0,
+                    sortOrder: sortOrder === "" ? 0 : Number(sortOrder),
                 },
             });
 
@@ -231,6 +246,7 @@ function MenuManagementPage() {
                 title: "Category updated",
                 message: `${trimmedName} updated successfully.`,
             });
+            setEditCategoryState({ open: false, category: null, name: "", sortOrder: "" });
         } catch (err) {
             showToast({
                 type: "error",
@@ -416,6 +432,57 @@ function MenuManagementPage() {
                 onClose={() => setDeleteState({ open: false, type: null, target: null })}
                 onConfirm={handleConfirmDelete}
             />
+
+            {editCategoryState.open && editCategoryState.category && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center bg-[#3a0a01]/60 p-4">
+                    <div className="w-full max-w-[440px] rounded-2xl border border-[#ded9d3] bg-[#fef9f2] shadow-2xl">
+                        <div className="flex flex-col gap-5 p-6">
+                            <div>
+                                <h2 className="text-2xl font-bold text-[#3d0c02]">Edit Category</h2>
+                                <p className="mt-1 text-sm text-[#54433f]">Update category details below.</p>
+                            </div>
+                            <div>
+                                <label className="mb-2 block text-sm font-bold text-[#3d0c02]">Category Name</label>
+                                <input
+                                    type="text"
+                                    value={editCategoryState.name}
+                                    onChange={(e) => setEditCategoryState((prev) => ({ ...prev, name: e.target.value }))}
+                                    className="w-full rounded-xl border border-[#ded9d3] bg-white p-3 text-sm outline-none focus:border-[#E8A020]"
+                                />
+                            </div>
+                            <div>
+                                <label className="mb-2 block text-sm font-bold text-[#3d0c02]">Sort Order</label>
+                                <input
+                                    type="number"
+                                    value={editCategoryState.sortOrder}
+                                    onChange={(e) => setEditCategoryState((prev) => ({ ...prev, sortOrder: e.target.value }))}
+                                    placeholder="0"
+                                    className="w-full rounded-xl border border-[#ded9d3] bg-white p-3 text-sm outline-none focus:border-[#E8A020]"
+                                />
+                            </div>
+                            <div className="flex gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setEditCategoryState({ open: false, category: null, name: "", sortOrder: "" })}
+                                    className="h-12 flex-1 rounded-xl border-2 border-[#ded9d3] font-bold text-[#3d0c02]"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleSaveCategoryEdit}
+                                    disabled={updateCategoryMutation.isPending}
+                                    className={`h-12 flex-1 rounded-xl font-extrabold text-white shadow-lg ${
+                                        updateCategoryMutation.isPending ? "cursor-not-allowed bg-gray-400" : "bg-[#3d0c02]"
+                                    }`}
+                                >
+                                    {updateCategoryMutation.isPending ? "Saving..." : "Save Changes"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {toast ? (
                 <div className="pointer-events-none fixed right-6 top-20 z-[200]">

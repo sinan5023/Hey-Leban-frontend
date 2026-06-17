@@ -1,5 +1,5 @@
 // src/pages/POSPage.jsx
-import { useMemo, useState, useEffect, useDeferredValue, memo } from "react";
+import { useMemo, useState, useEffect, useDeferredValue, memo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import PaymentModal from "../components/pos/PaymentModal";
@@ -12,6 +12,7 @@ import { createOrderPayment } from "../services/paymentService";
 import { useQueryClient } from "@tanstack/react-query";
 import { useDebouncedValue } from "../hooks/orders/useDebouncedValue";
 import { useTicketSearchQuery } from "../hooks/orders/useTicketSearchQuery";
+import { useOrdersQuery } from "../hooks/orders/useOrdersQuery";
 import OrdersSearchDropdown from "../components/orders/OrdersSearchDropdown";
 import { printBoth } from "../utils/printHelpers";
 
@@ -112,10 +113,13 @@ function POSPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
   const [showDiscountEditor, setShowDiscountEditor] = useState(false);
   const [discountInput, setDiscountInput] = useState("");
 
   const todaySession = useSessionStore((state) => state.todaySession);
+  const isSessionChecked = useSessionStore((state) => state.isSessionChecked);
   const fetchTodaySession = useSessionStore((state) => state.fetchTodaySession);
   const discountAmount = useCartStore((state) => state.discountAmount);
   const setDiscountAmount = useCartStore((state) => state.setDiscountAmount);
@@ -168,12 +172,13 @@ function POSPage() {
     }
   }, [categories, selectedCategoryId]);
 
-  // Fetch session info for display (non-blocking — no redirect)
+
+  // Fetch session on mount if it hasn't been checked yet (e.g. after login)
   useEffect(() => {
-    if (!todaySession) {
+    if (!isSessionChecked) {
       fetchTodaySession();
     }
-  }, [todaySession, fetchTodaySession]);
+  }, [isSessionChecked, fetchTodaySession]);
 
   useEffect(() => {
     if (!toast) return;
@@ -484,21 +489,32 @@ function POSPage() {
   const [orderSearch, setOrderSearch] = useState("");
   const [kotSearch, setKotSearch] = useState("");
 
+  const dueOrdersQuery = useOrdersQuery(
+    { status: "DUE", limit: 1 },
+    { staleTime: 30000, refetchInterval: 30000 }
+  );
+  const openOrdersQuery = useOrdersQuery(
+    { status: "OPEN", limit: 1 },
+    { staleTime: 30000, refetchInterval: 30000 }
+  );
+
+  const dueOrdersCount = dueOrdersQuery.data?.pagination?.total || 0;
+  const openOrdersCount = openOrdersQuery.data?.pagination?.total || 0;
+  const unpaidCount = dueOrdersCount + openOrdersCount;
+
   const debouncedOrder = useDebouncedValue(orderSearch, 300);
   const debouncedKot = useDebouncedValue(kotSearch, 300);
 
-  const normalizedOrderQuery = debouncedOrder
-    .trim()
-    .toUpperCase()
-    .startsWith("ORD-")
-    ? debouncedOrder.trim().toUpperCase()
+  const normalizedOrderQuery = debouncedOrder.trim()
+    ? (debouncedOrder.trim().toUpperCase().startsWith("ORD-")
+        ? debouncedOrder.trim().toUpperCase()
+        : `ORD-${debouncedOrder.trim().toUpperCase()}`)
     : "";
 
-  const normalizedKotQuery = debouncedKot
-    .trim()
-    .toUpperCase()
-    .startsWith("KOT-")
-    ? debouncedKot.trim().toUpperCase()
+  const normalizedKotQuery = debouncedKot.trim()
+    ? (debouncedKot.trim().toUpperCase().startsWith("KOT-")
+        ? debouncedKot.trim().toUpperCase()
+        : `KOT-${debouncedKot.trim().toUpperCase()}`)
     : "";
 
   const orderSearchQuery = useTicketSearchQuery(
@@ -561,21 +577,65 @@ function POSPage() {
     navigate("/settings");
   };
 
+  // ── Swipe handling for categories ──
+  const touchStartRef = useRef(null);
+  const touchEndRef = useRef(null);
+  const minSwipeDistance = 50;
+
+  const onTouchStart = (e) => {
+    touchEndRef.current = null;
+    touchStartRef.current = e.targetTouches[0].clientX;
+  };
+
+  const onTouchMove = (e) => {
+    touchEndRef.current = e.targetTouches[0].clientX;
+  };
+
+  const onTouchEnd = () => {
+    if (!touchStartRef.current || !touchEndRef.current) return;
+    const distance = touchStartRef.current - touchEndRef.current;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+
+    if (isLeftSwipe || isRightSwipe) {
+      const currentIndex = visibleCategories.findIndex((c) => c.id === selectedCategoryId);
+      if (currentIndex === -1) return;
+
+      if (isLeftSwipe && currentIndex < visibleCategories.length - 1) {
+        // Swipe left -> Next category
+        setSelectedCategoryId(visibleCategories[currentIndex + 1].id);
+      } else if (isRightSwipe && currentIndex > 0) {
+        // Swipe right -> Previous category
+        setSelectedCategoryId(visibleCategories[currentIndex - 1].id);
+      }
+    }
+  };
+
   return (
     <>
-      <div className="flex h-screen flex-col overflow-hidden bg-[#fef9f2] text-[#3d0c02]">
-        <header className="flex h-[56px] shrink-0 items-center justify-between bg-[#3d0c02] px-6 text-white">
-          <div className="flex items-center gap-4">
+      <div className="flex min-h-screen lg:h-screen flex-col lg:overflow-hidden bg-[#fef9f2] text-[#3d0c02]">
+        <header className="flex h-auto min-h-[56px] shrink-0 flex-wrap items-center justify-between gap-y-3 bg-[#3d0c02] px-4 py-3 md:px-6 md:py-0 text-white">
+          <div className="flex flex-wrap items-center gap-2 md:gap-4 w-full md:w-auto">
             
+            {/* Mobile Hamburger Button */}
+            <button
+              type="button"
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="md:hidden p-2 -ml-2 text-white/80 hover:text-white"
+            >
+              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
 
-            <span className="border-l border-white/20 pl-4 text-sm opacity-60">
+            <span className="hidden md:inline border-l border-white/20 pl-2 md:pl-4 text-xs md:text-sm opacity-60">
               {todaySession?.date
                 ? new Date(todaySession.date).toLocaleDateString()
                 : "Today"}
             </span>
 
-            <div className="ml-4 flex items-center gap-2">
-              <div className="relative w-40">
+            <div className="ml-auto md:ml-4 flex flex-1 md:flex-initial items-center gap-2">
+              <div className="relative w-full md:w-40">
                 <input
                   value={kotSearch}
                   onChange={(e) => setKotSearch(e.target.value)}
@@ -595,7 +655,7 @@ function POSPage() {
                 />
               </div>
 
-              <div className="relative w-40">
+              <div className="relative w-full md:w-40">
                 <input
                   value={orderSearch}
                   onChange={(e) => setOrderSearch(e.target.value)}
@@ -617,7 +677,8 @@ function POSPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          {/* Desktop Right Side Buttons */}
+          <div className="hidden md:flex items-center gap-4 justify-end">
             <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-bold uppercase tracking-wide">
               {todaySession?.status || "No Session"}
             </span>
@@ -628,23 +689,26 @@ function POSPage() {
               </span>
             )}
 
-            <button
-              type="button"
-              className="opacity-80"
-              onClick={() => window.location.reload()}
-            >
-              ↺
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                className="opacity-80"
+                onClick={() => window.location.reload()}
+              >
+                ↺
+              </button>
 
-            <button
-              type="button"
-              onClick={goToSettingsPage}
-              className="opacity-80 transition hover:opacity-100"
-              title="Settings"
-              aria-label="Open settings"
-            >
-              ⚙
-            </button>
+              <button
+                type="button"
+                onClick={goToSettingsPage}
+                className="opacity-80 transition hover:opacity-100"
+                title="Settings"
+                aria-label="Open settings"
+              >
+                ⚙
+              </button>
+            </div>
+
             <button
               type="button"
               onClick={() => {
@@ -659,33 +723,131 @@ function POSPage() {
             <button
               type="button"
               onClick={goToOrdersPage}
-              className="rounded-lg border border-white/30 px-6 py-2 text-sm font-bold"
+              className="relative rounded-lg border border-white/30 px-6 py-2 text-sm font-bold"
             >
               Orders
+              <div className="absolute -right-2 -top-2 flex h-5 min-w-[20px] items-center justify-center">
+                {unpaidCount > 0 && (
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75"></span>
+                )}
+                <span
+                  className={`relative inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white shadow-sm ring-2 ring-[#3d0c02] ${
+                    unpaidCount > 0 ? "bg-red-500" : "bg-gray-500"
+                  }`}
+                >
+                  {unpaidCount}
+                </span>
+              </div>
             </button>
           </div>
         </header>
 
-        <main className="flex flex-1 overflow-hidden">
+        {/* Mobile Sidebar Overlay */}
+        {isMobileMenuOpen && (
+          <div className="fixed inset-0 z-50 flex md:hidden">
+            {/* Backdrop */}
+            <div 
+              className="fixed inset-0 bg-black/50 transition-opacity"
+              onClick={() => setIsMobileMenuOpen(false)}
+            />
+            
+            {/* Sidebar */}
+            <div className="relative flex w-[280px] max-w-[80vw] flex-col bg-[#3d0c02] text-white p-6 shadow-xl h-full animate-in slide-in-from-left duration-200">
+              <button
+                type="button"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="absolute right-4 top-4 p-2 text-white/80 hover:text-white"
+              >
+                ✕
+              </button>
+              
+              <h2 className="text-xl font-bold mb-8">Menu</h2>
+
+              <div className="flex flex-col gap-6">
+                <div>
+                  <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-bold uppercase tracking-wide">
+                    {todaySession?.status || "No Session"}
+                  </span>
+                  <p className="mt-2 text-sm opacity-80">
+                    {todaySession?.date
+                      ? new Date(todaySession.date).toLocaleDateString()
+                      : "Today"}
+                  </p>
+                  {todaySession?.openingCash !== undefined && (
+                    <p className="mt-1 text-sm opacity-80">
+                      Opening Cash: ₹{formatMoney(todaySession.openingCash)}
+                    </p>
+                  )}
+                </div>
+
+                <div className="h-px bg-white/10 w-full" />
+
+                <button
+                  type="button"
+                  onClick={goToOrdersPage}
+                  className="flex items-center justify-between rounded-xl bg-white/10 px-4 py-3 font-bold"
+                >
+                  <span>Orders</span>
+                  {unpaidCount > 0 && (
+                    <span className="flex h-6 min-w-[24px] items-center justify-center rounded-full bg-red-500 px-2 text-xs text-white">
+                      {unpaidCount} Due
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (shouldClearCartOnLeave()) resetCurrentOrderFlow();
+                    navigate("/close-sales");
+                  }}
+                  className="rounded-xl border border-white/30 px-4 py-3 font-bold text-left"
+                >
+                  Close Sale
+                </button>
+
+                <div className="h-px bg-white/10 w-full" />
+
+                <button
+                  type="button"
+                  onClick={goToSettingsPage}
+                  className="flex items-center gap-3 px-2 py-2 font-bold opacity-80 hover:opacity-100"
+                >
+                  ⚙ Settings
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="flex items-center gap-3 px-2 py-2 font-bold opacity-80 hover:opacity-100"
+                >
+                  ↺ Refresh POS
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <main className="flex flex-1 flex-col lg:flex-row lg:overflow-hidden">
           {/* ── Left: Product catalogue ── */}
-          <section className="flex w-[60%] flex-col border-r border-[#ded9d3]">
-            <div className="border-b border-[#ded9d3] bg-white/50 p-4">
+          <section className="flex w-full lg:w-[60%] flex-col border-b lg:border-b-0 lg:border-r border-[#ded9d3]">
+            <div className="border-b border-[#ded9d3] bg-white/50 p-3 lg:p-4 shrink-0">
               <input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-12 w-full rounded-xl bg-[#ece7e1] px-4 text-[#3d0c02] placeholder:text-[#3d0c02]/40 focus:outline-none"
+                className="h-10 lg:h-12 w-full rounded-xl bg-[#ece7e1] px-4 text-[#3d0c02] placeholder:text-[#3d0c02]/40 focus:outline-none"
                 placeholder="Search products..."
                 type="text"
               />
             </div>
 
-            <nav className="bg-white/50 p-4">
-              <div className="flex gap-3 overflow-x-auto">
+            <nav className="bg-white/50 p-3 lg:p-4 shrink-0">
+              <div className="flex gap-2 lg:gap-3 overflow-x-auto pb-1 no-scrollbar">
                 {isLoading
                   ? [1, 2, 3, 4].map((i) => (
                     <div
                       key={i}
-                      className="h-11 w-28 animate-pulse rounded-full bg-[#ece7e1]"
+                      className="h-10 lg:h-11 w-24 lg:w-28 animate-pulse shrink-0 rounded-full bg-[#ece7e1]"
                     />
                   ))
                   : categories.map((category) => (
@@ -696,7 +858,7 @@ function POSPage() {
                         setSelectedCategoryId(category.id);
                         setSearchQuery("");
                       }}
-                      className={`flex min-h-[44px] min-w-[96px] max-w-[140px] items-center justify-center rounded-full px-4 py-2 text-center text-sm font-semibold leading-tight break-words ${selectedCategoryId === category.id
+                      className={`flex shrink-0 min-h-[40px] lg:min-h-[44px] min-w-[80px] lg:min-w-[96px] max-w-[140px] items-center justify-center rounded-full px-3 lg:px-4 py-1.5 lg:py-2 text-center text-xs lg:text-sm font-semibold leading-tight break-words ${selectedCategoryId === category.id
                           ? "bg-[#E8A020] text-white shadow-md"
                           : "border border-[#ded9d3] bg-white text-[#3d0c02]"
                         }`}
@@ -707,7 +869,12 @@ function POSPage() {
               </div>
             </nav>
 
-            <div className="grid flex-1 grid-cols-3 content-start gap-6 overflow-y-auto p-6">
+            <div 
+              className="grid flex-1 grid-cols-2 md:grid-cols-3 content-start gap-4 lg:gap-6 overflow-y-auto p-4 lg:p-6 min-h-[50vh] lg:min-h-0"
+              onTouchStart={onTouchStart}
+              onTouchMove={onTouchMove}
+              onTouchEnd={onTouchEnd}
+            >
               {isLoading &&
                 [1, 2, 3, 4, 5, 6].map((i) => (
                   <div
@@ -741,7 +908,7 @@ function POSPage() {
           </section>
 
           {/* ── Right: Cart ── */}
-          <section className="flex w-[40%] flex-col bg-white">
+          <section className="flex w-full lg:w-[40%] flex-col bg-white min-h-[50vh] lg:min-h-0">
             {/* Order type tabs */}
             <div className="border-b border-[#ded9d3] bg-[#f8f3ec]/50 p-3">
               <div className="flex items-center overflow-hidden rounded-xl border border-[#ded9d3] bg-white">

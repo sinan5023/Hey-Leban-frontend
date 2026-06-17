@@ -2,7 +2,7 @@
 export function getOrdersParamsFromSearch(searchParams) {
   return {
     page: Number(searchParams.get("page") || 1),
-    limit: Number(searchParams.get("limit") || 20),
+    limit: Number(searchParams.get("limit") || 10),
     status: searchParams.get("status") || "",
     kotStatus: searchParams.get("kotStatus") || "",
     orderType: searchParams.get("orderType") || "",

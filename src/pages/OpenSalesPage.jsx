@@ -7,12 +7,10 @@ import { getSalesSessionOverview } from "../services/salesSessionService";
 function OpenSalesPage() {
   const navigate = useNavigate();
   const openTodaySession = useSessionStore((state) => state.openTodaySession);
-  const fetchTodaySession = useSessionStore((state) => state.fetchTodaySession);
 
   const [openingCash, setOpeningCash] = useState("0");
   const [openingNote, setOpeningNote] = useState("");
   const [loading, setLoading] = useState(false);
-  const [checkingSession, setCheckingSession] = useState(true);
   const [error, setError] = useState("");
 
   // Previous session overview
@@ -21,7 +19,6 @@ function OpenSalesPage() {
 
   const quickAmounts = [500, 1000, 1500, 2000];
 
-  // Format date for display
   const formatDate = (dateStr) => {
     if (!dateStr) return "—";
     const date = new Date(dateStr);
@@ -37,38 +34,18 @@ function OpenSalesPage() {
     return formatDate(new Date().toISOString());
   }, []);
 
-  // Format currency
   const formatMoney = (value) => {
     const num = Number(value || 0);
     return "₹" + num.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   };
 
-  // Check if session already open
-  useEffect(() => {
-    const checkSession = async () => {
-      try {
-        const session = await fetchTodaySession();
-        if (session?.status === "OPEN") {
-          navigate("/pos", { replace: true });
-          return;
-        }
-      } catch {
-        // ignore — page stays in open-sales
-      } finally {
-        setCheckingSession(false);
-      }
-    };
-    checkSession();
-  }, [fetchTodaySession, navigate]);
-
-  // Fetch previous session overview
+  // Fetch previous session overview (uses a different endpoint, not the deprecated one)
   useEffect(() => {
     const fetchPrev = async () => {
       try {
         const data = await getSalesSessionOverview("previous");
         setPrevOverview(data);
       } catch {
-        // no previous session — that's okay
         setPrevOverview(null);
       } finally {
         setPrevLoading(false);
@@ -112,19 +89,7 @@ function OpenSalesPage() {
     }
   };
 
-  // Checklist state
   const cashEntered = Number(openingCash) > 0;
-
-  if (checkingSession) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#fef9f2]">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-[#ded9d3] border-t-[#3d0c02]" />
-          <p className="text-sm font-semibold text-[#54433f]">Checking session…</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-[#fef9f2] pb-32 font-[Plus_Jakarta_Sans]">

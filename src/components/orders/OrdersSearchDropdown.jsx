@@ -8,7 +8,7 @@ function OrdersSearchDropdown({
   if (!open) return null;
 
   return (
-    <div className="absolute top-[calc(100%+8px)] z-[150] w-full rounded-2xl border border-[#ded9d3] bg-white p-2 shadow-2xl">
+    <div className="absolute top-[calc(100%+8px)] z-[150] w-full rounded-2xl border border-[#ded9d3] bg-white p-2 shadow-2xl text-[#3d0c02]">
       {loading ? (
         <div className="px-3 py-4 text-sm text-[#54433f]">Searching...</div>
       ) : error ? (

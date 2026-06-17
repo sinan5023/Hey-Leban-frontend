@@ -9,21 +9,28 @@ function SettingsCard({
 }) {
   return (
     <div
-      className="group flex h-full flex-col rounded-2xl border border-[#d9c1bc]/30 bg-white p-5 shadow-[0_4px_12px_rgba(61,12,2,0.08)] transition-colors hover:border-[#815500]"
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick?.();
+        }
+      }}
+      className="group flex h-full cursor-pointer text-left flex-col rounded-2xl border border-[#d9c1bc]/30 bg-white p-5 shadow-[0_4px_12px_rgba(61,12,2,0.08)] transition-all hover:border-[#815500] hover:shadow-md outline-none focus-visible:ring-2 focus-visible:ring-[#815500]"
     >
       <div className="mb-6 flex items-start justify-between">
         <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-[#3d0c02]/10 text-[28px] text-[#3d0c02]">
           <span>{icon}</span>
         </div>
 
-        <button
-          type="button"
-          onClick={onClick}
-          className="text-xl text-[#86736e] transition-colors hover:text-[#815500]"
-          aria-label={`Open ${title}`}
+        <div
+          className="text-xl text-[#86736e] transition-colors group-hover:text-[#815500]"
+          aria-hidden="true"
         >
           ›
-        </button>
+        </div>
       </div>
 
       <h2 className="mb-2 text-[24px] font-bold leading-8 text-[#3d0c02]">
@@ -35,14 +42,12 @@ function SettingsCard({
       </p>
 
       {buttonType === "button" ? (
-        <button
-          type="button"
-          onClick={onClick}
-          className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#feb234] text-[14px] font-bold text-[#6d4700] shadow-sm transition hover:bg-[#feb234]/90"
+        <div
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#feb234] text-[14px] font-bold text-[#6d4700] shadow-sm transition group-hover:bg-[#feb234]/90"
         >
           <span>🛠️</span>
           {buttonLabel}
-        </button>
+        </div>
       ) : (
         <div className="flex flex-wrap gap-2 border-t border-[#d9c1bc]/20 pt-4">
           {tags.map((tag, index) => (

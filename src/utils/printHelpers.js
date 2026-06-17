@@ -8,9 +8,9 @@ const formatPayload = (printType, orderData, kotData = null) => {
   return {
     printType: printType, // "KOT" | "BILL" | "BOTH"
     shop: {
-      name: "Hey Leban",
+      name: "feel Leban",
       address: "Edavannappara, Malappuram",
-      phone: "+91 9876543210",
+      phone: "+91 6381-554322",
       email: "hello@heylaban.com"
     },
     // Fallback to "Cashier" if user data isn't in the order object

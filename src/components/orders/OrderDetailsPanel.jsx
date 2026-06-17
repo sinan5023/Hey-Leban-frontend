@@ -49,12 +49,12 @@ function OrderDetailsPanel({
   actionLoading,
 }) {
   if (loading) {
-    return <div className="h-96 animate-pulse rounded-2xl bg-white" />;
+    return <div className="h-[calc(100vh-260px)] animate-pulse rounded-2xl bg-white" />;
   }
 
   if (!order) {
     return (
-      <div className="rounded-2xl border border-dashed border-[#ded9d3] bg-white p-8 text-center text-[#3d0c02]/50">
+      <div className="h-[calc(100vh-260px)] rounded-2xl border border-dashed border-[#ded9d3] bg-white p-8 flex items-center justify-center text-[#3d0c02]/50">
         Select an order to view details.
       </div>
     );
@@ -72,7 +72,7 @@ function OrderDetailsPanel({
     : "Print KOT";
 
   return (
-    <div className="sticky top-6 rounded-2xl border border-[#ded9d3] bg-white p-5 shadow-sm">
+    <div className="sticky top-6 h-[calc(100vh-260px)] overflow-y-auto rounded-2xl border border-[#ded9d3] bg-white p-5 shadow-sm">
       <div className="border-b border-[#ded9d3] pb-4">
         <h2 className="text-2xl font-extrabold">{order.orderNo}</h2>
         <p className="mt-1 text-sm text-[#54433f]">Token #{order.tokenNo}</p>
@@ -101,10 +101,34 @@ function OrderDetailsPanel({
     <span className="font-bold">{value}</span>
   </div>
 ))}
+
+        {/* Notes */}
+        {(order.note || order.orderNote || order.notes) && (
+          <div className="flex justify-between gap-4 pt-1">
+            <span className="opacity-70">Notes</span>
+            <span className="text-right font-bold">{order.note || order.orderNote || order.notes}</span>
+          </div>
+        )}
+
+        {/* Payments Split */}
+        {order.payments && order.payments.length > 0 && (
+          <div className="pt-2 mt-2 border-t border-dashed border-[#ded9d3]">
+            <div className="mb-1 opacity-70 font-semibold text-xs uppercase tracking-wider">Payment Split</div>
+            <div className="space-y-1">
+              {order.payments.map((p, idx) => (
+                <div key={idx} className="flex justify-between text-sm">
+                  <span className="opacity-70 pl-2 capitalize">• {(p.paymentMethod || p.method || "CASH").toLowerCase()}</span>
+                  <span className="font-bold">₹{Number(p.amount || 0).toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {order.cancelReason && (
-          <div className="flex justify-between gap-4">
+          <div className="flex justify-between gap-4 pt-2 mt-2 border-t border-dashed border-[#ded9d3]">
             <span className="opacity-70">Cancel Reason</span>
-            <span className="text-right font-bold">{order.cancelReason}</span>
+            <span className="text-right font-bold text-red-600">{order.cancelReason}</span>
           </div>
         )}
       </div>

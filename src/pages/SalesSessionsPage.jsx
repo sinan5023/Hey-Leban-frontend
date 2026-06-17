@@ -48,7 +48,7 @@ export default function SalesSessionsPage() {
 
   return (
     <div className="bg-[#fef9f2] text-[#1d1c18] min-h-screen font-sans">
-      <header className="bg-[#ece7e1] top-0 sticky z-50 shadow-sm shadow-[#0e0100]/10 flex justify-between items-center px-6 py-4 w-full">
+      <header className="bg-[#3d0c02]  top-0 sticky z-50 shadow-sm shadow-[#0e0100]/10 flex justify-between items-center text-white px-6 py-4 w-full">
         <div className="flex items-center gap-4">
           <button
             type="button"
@@ -59,14 +59,14 @@ export default function SalesSessionsPage() {
             <span className="text-[24px]">←</span>
           </button>
         </div>
-        <div className="flex items-center gap-2">
+        {/* <div className="flex items-center gap-2">
            <button className="ml-2 flex items-center gap-2 pl-2 pr-1 py-1 rounded-full border border-[#d9c1bc] hover:bg-[#e6e2db]/50 transition-colors">
             <span className="text-sm font-bold text-[#0e0100]">Admin</span>
             <div className="w-8 h-8 rounded-full bg-[#feb234] flex items-center justify-center">
               <span className="text-[#6d4700] text-sm">👤</span>
             </div>
           </button>
-        </div>
+        </div> */}
       </header>
       
       <div className="flex">

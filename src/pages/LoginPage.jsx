@@ -39,8 +39,16 @@ function LoginPage() {
       // to /open-sales only when the user tries an action that needs a session.
       navigate("/pos", { replace: true });
     } catch (err) {
-      const message =
-        err?.response?.data?.message || "Invalid email or password";
+      let message = err?.response?.data?.message;
+      
+      if (!err.response) {
+        message = "No network connection. Please check your internet and try again.";
+      } else if (message && (message.toLowerCase().includes("prisma") || message.toLowerCase().includes("database"))) {
+        message = "No network connection. Please check your internet and try again.";
+      } else {
+        message = message || "Invalid email or password";
+      }
+      
       setError(message);
     } finally {
       setLoading(false);

@@ -275,7 +275,7 @@ const handlePrintBill = async (order) => {
         <OrdersFilters params={params} onChange={handleParamsChange} />
 
         <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="max-h-[calc(100vh-260px)] overflow-y-auto rounded-2xl pr-1">
+          <div className="h-[calc(100vh-260px)] overflow-y-auto rounded-2xl pr-1">
             <OrdersList
               orders={orders}    // ← must be `orders`, not `rawOrders`
               loading={ordersQuery.isLoading}

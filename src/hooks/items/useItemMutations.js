@@ -5,8 +5,10 @@ import {
   createItem,
   deleteCategory,
   deleteItem,
+  linkProductToBase,
   toggleCategoryActive,
   toggleItemActive,
+  unlinkProductFromBase,
   updateCategory,
   updateItem,
 } from "../../services/itemService";
@@ -16,6 +18,11 @@ export function useItemMutations() {
 
   const invalidateCatalogue = () =>
     queryClient.invalidateQueries({ queryKey: ["catalogue"] });
+
+  const invalidateBoth = () => {
+    queryClient.invalidateQueries({ queryKey: ["catalogue"] });
+    queryClient.invalidateQueries({ queryKey: ["rawMaterials"] });
+  };
 
   return {
     createItemMutation: useMutation({
@@ -49,6 +56,15 @@ export function useItemMutations() {
     toggleCategoryActiveMutation: useMutation({
       mutationFn: ({ id, isActive }) => toggleCategoryActive(id, isActive),
       onSuccess: invalidateCatalogue,
+    }),
+    linkIngredientMutation: useMutation({
+      mutationFn: ({ productId, rawMaterialId }) =>
+        linkProductToBase(productId, rawMaterialId),
+      onSuccess: invalidateBoth,
+    }),
+    unlinkIngredientMutation: useMutation({
+      mutationFn: ({ productId }) => unlinkProductFromBase(productId),
+      onSuccess: invalidateBoth,
     }),
   };
 }

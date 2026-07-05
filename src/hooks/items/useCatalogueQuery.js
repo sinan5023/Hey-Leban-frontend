@@ -4,8 +4,8 @@ import { fetchManagementCatalogue } from "../../services/itemService";
 
 export function useCatalogueQuery() {
   return useQuery({
-    queryKey: ["catalogue"],
+    queryKey: ["catalogue", "management"],
     queryFn: fetchManagementCatalogue,
     staleTime: 5 * 60 * 1000,
   });
-}
+}

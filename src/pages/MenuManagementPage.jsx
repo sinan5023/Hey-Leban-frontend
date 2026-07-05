@@ -19,11 +19,14 @@ function MenuManagementPage() {
         updateCategoryMutation,
         deleteCategoryMutation,
         toggleCategoryActiveMutation,
+        linkIngredientMutation,
+        unlinkIngredientMutation,
     } = useItemMutations();
 
     const [searchQuery, setSearchQuery] = useState("");
     const [editingItem, setEditingItem] = useState(null);
-    const [showDisabledItems, setShowDisabledItems] = useState(false);
+    const [showDisabledItems, setShowDisabledItems] = useState(true);
+    const [isItemFormOpen, setIsItemFormOpen] = useState(false);
     const [toast, setToast] = useState(null);
     const [deleteState, setDeleteState] = useState({
         open: false,
@@ -126,6 +129,7 @@ function MenuManagementPage() {
                     message: `${payload.name} updated successfully.`,
                 });
                 setEditingItem(null);
+                setIsItemFormOpen(false);
                 return;
             }
 
@@ -135,6 +139,7 @@ function MenuManagementPage() {
                 title: "Product created",
                 message: `${payload.name} created successfully.`,
             });
+            setIsItemFormOpen(false);
         } catch (err) {
             showToast({
                 type: "error",
@@ -176,7 +181,41 @@ function MenuManagementPage() {
             ...item,
             categoryId: item.categoryId || category.id,
         });
-        window.scrollTo({ top: 0, behavior: "smooth" });
+        setIsItemFormOpen(true);
+    };
+
+    const handleLinkIngredient = async ({ productId, rawMaterialId }) => {
+        try {
+            await linkIngredientMutation.mutateAsync({ productId, rawMaterialId });
+            showToast({
+                type: "success",
+                title: "Ingredient linked",
+                message: "Product is now tracked via the selected base.",
+            });
+        } catch (err) {
+            showToast({
+                type: "error",
+                title: "Link failed",
+                message: getErrorMessage(err, "Failed to link product to base."),
+            });
+        }
+    };
+
+    const handleUnlinkIngredient = async ({ productId }) => {
+        try {
+            await unlinkIngredientMutation.mutateAsync({ productId });
+            showToast({
+                type: "success",
+                title: "Ingredient unlinked",
+                message: "Product will now be tracked individually.",
+            });
+        } catch (err) {
+            showToast({
+                type: "error",
+                title: "Unlink failed",
+                message: getErrorMessage(err, "Failed to unlink product from base."),
+            });
+        }
     };
 
     const handleDeleteItem = (item) => {
@@ -372,48 +411,59 @@ function MenuManagementPage() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
-                        <div>
-                            <ItemForm
-                                categories={categories}
-                                editingItem={editingItem}
-                                itemLoading={
-                                    createItemMutation.isPending || updateItemMutation.isPending
-                                }
-                                categoryLoading={createCategoryMutation.isPending}
-                                onSubmitItem={handleSubmitItem}
-                                onCancelEdit={() => setEditingItem(null)}
-                                onCreateCategory={handleCreateCategory}
-                            />
-                        </div>
-
-                        <div>
-                            {isLoading ? (
-                                <div className="rounded-2xl border border-[#ded9d3] bg-white p-6 shadow-sm">
-                                    <div className="space-y-4">
-                                        <div className="h-12 animate-pulse rounded-xl bg-[#ece7e1]" />
-                                        <div className="h-24 animate-pulse rounded-xl bg-[#ece7e1]" />
-                                        <div className="h-24 animate-pulse rounded-xl bg-[#ece7e1]" />
-                                        <div className="h-24 animate-pulse rounded-xl bg-[#ece7e1]" />
-                                    </div>
+                    <div className="w-full">
+                        {isLoading ? (
+                            <div className="rounded-2xl border border-[#ded9d3] bg-white p-6 shadow-sm">
+                                <div className="space-y-4">
+                                    <div className="h-12 animate-pulse rounded-xl bg-[#ece7e1]" />
+                                    <div className="h-24 animate-pulse rounded-xl bg-[#ece7e1]" />
+                                    <div className="h-24 animate-pulse rounded-xl bg-[#ece7e1]" />
+                                    <div className="h-24 animate-pulse rounded-xl bg-[#ece7e1]" />
                                 </div>
-                            ) : (
-                                <ItemsTable
-                                    categories={normalizedCategories}
-                                    searchQuery={searchQuery}
-                                    onSearchChange={setSearchQuery}
-                                    onEditCategory={handleEditCategory}
-                                    onDeleteCategory={handleDeleteCategory}
-                                    onToggleCategory={handleToggleCategory}
-                                    onEditItem={handleEditItem}
-                                    onDeleteItem={handleDeleteItem}
-                                    onToggleItem={handleToggleItem}
-                                    showDisabledItems={showDisabledItems}
-                                    onToggleShowDisabledItems={() => setShowDisabledItems((prev) => !prev)}
-                                />
-                            )}
-                        </div>
+                            </div>
+                        ) : (
+                            <ItemsTable
+                                categories={normalizedCategories}
+                                searchQuery={searchQuery}
+                                onSearchChange={setSearchQuery}
+                                onEditCategory={handleEditCategory}
+                                onDeleteCategory={handleDeleteCategory}
+                                onToggleCategory={handleToggleCategory}
+                                onEditItem={handleEditItem}
+                                onDeleteItem={handleDeleteItem}
+                                onToggleItem={handleToggleItem}
+                                showDisabledItems={showDisabledItems}
+                                onToggleShowDisabledItems={() => setShowDisabledItems((prev) => !prev)}
+                                onAddItem={() => {
+                                    setEditingItem(null);
+                                    setIsItemFormOpen(true);
+                                }}
+                            />
+                        )}
                     </div>
+
+                    <ItemForm
+                        categories={categories}
+                        editingItem={editingItem}
+                        itemLoading={
+                            createItemMutation.isPending || updateItemMutation.isPending
+                        }
+                        categoryLoading={createCategoryMutation.isPending}
+                        onSubmitItem={handleSubmitItem}
+                        onCancelEdit={() => {
+                            setEditingItem(null);
+                            setIsItemFormOpen(false);
+                        }}
+                        onCreateCategory={handleCreateCategory}
+                        onLinkIngredient={handleLinkIngredient}
+                        onUnlinkIngredient={handleUnlinkIngredient}
+                        linkLoading={linkIngredientMutation.isPending || unlinkIngredientMutation.isPending}
+                        isOpen={isItemFormOpen}
+                        onClose={() => {
+                            setEditingItem(null);
+                            setIsItemFormOpen(false);
+                        }}
+                    />
                 </div>
             </main>
 

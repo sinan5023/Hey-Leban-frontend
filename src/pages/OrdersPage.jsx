@@ -207,9 +207,12 @@ const handlePrintBill = async (order) => {
     mutationFn: ({ orderId, payload }) => cancelOrder(orderId, payload),
     onSuccess: async (_, variables) => {
       await refetchOrder(variables.orderId);
+      // Restock: invalidate inventory + rawMaterials so POS stock counts update immediately
+      queryClient.invalidateQueries({ queryKey: ["inventory"] });
+      queryClient.invalidateQueries({ queryKey: ["rawMaterials"] });
       setCancelModal({ open: false, order: null });
       setCancelReason("");
-      showToast("success", "Order Cancelled", "Order has been cancelled successfully.");
+      showToast("success", "Order Cancelled", "Order has been cancelled and stock has been restocked.");
     },
     onError: (err) => {
       showToast(

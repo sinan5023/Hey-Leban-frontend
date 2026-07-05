@@ -102,10 +102,10 @@ function CloseSalesPage() {
     }
 
     const cleanedExpenses = expenses
-      .filter((e) => e.categoryName.trim() && Number(e.amount || 0) > 0)
+      .filter((e) => e.categoryName.trim())
       .map((e) => ({
         categoryName: e.categoryName.trim(),
-        amount: Number(e.amount),
+        amount: Number(e.amount || 0),
         note: e.note.trim() || null,
       }));
 

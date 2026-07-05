@@ -8,9 +8,8 @@ function StatusBadge({ status }) {
 
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-        map[status] || "bg-gray-100 text-gray-700"
-      }`}
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${map[status] || "bg-gray-100 text-gray-700"
+        }`}
     >
       {status}
     </span>
@@ -28,9 +27,8 @@ function PaymentMethodBadge({ method }) {
 
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-        map[method] || "bg-gray-100 text-gray-700"
-      }`}
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${map[method] || "bg-gray-100 text-gray-700"
+        }`}
     >
       {method}
     </span>
@@ -168,11 +166,10 @@ export default function OrdersTable({
                     key={p}
                     type="button"
                     onClick={() => setPage(p)}
-                    className={`h-8 w-8 rounded-lg text-[12px] font-bold transition ${
-                      page === p
+                    className={`h-8 w-8 rounded-lg text-[12px] font-bold transition ${page === p
                         ? "bg-[#3d0c02] text-white"
                         : "border border-[#d9c1bc] text-[#54433f] hover:bg-[#f3ede7]"
-                    }`}
+                      }`}
                   >
                     {p}
                   </button>

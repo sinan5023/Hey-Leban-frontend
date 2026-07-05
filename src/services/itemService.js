@@ -47,3 +47,13 @@ export const toggleCategoryActive = async (id, isActive) => {
   const response = await api.patch(`/api/categories/${id}/inactive`, { isActive });
   return unwrapData(response);
 };
+
+export const linkProductToBase = async (productId, rawMaterialId) => {
+  const response = await api.put(`/api/items/${productId}/ingredient`, { rawMaterialId });
+  return unwrapData(response);
+};
+
+export const unlinkProductFromBase = async (productId) => {
+  const response = await api.delete(`/api/items/${productId}/ingredient`);
+  return unwrapData(response);
+};

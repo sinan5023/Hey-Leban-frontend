@@ -15,19 +15,28 @@ import { useTicketSearchQuery } from "../hooks/orders/useTicketSearchQuery";
 import { useOrdersQuery } from "../hooks/orders/useOrdersQuery";
 import OrdersSearchDropdown from "../components/orders/OrdersSearchDropdown";
 import { printBoth } from "../utils/printHelpers";
+import { useInventoryQuery } from "../hooks/inventory/useInventoryQuery";
+import { useRawMaterialsQuery } from "../hooks/rawMaterials/useRawMaterialsQuery";
 
 const formatMoney = (value) => {
   const numeric = Number(value || 0);
   return numeric.toFixed(2);
 };
 
-const ProductCard = memo(({ product, quantity, onAdd }) => {
+const ProductCard = memo(({ product, quantity, stockCount, onAdd }) => {
+  const currentStock = stockCount - quantity;
+  const isOutOfStock = currentStock <= 0;
+
   return (
     <button
       type="button"
+      disabled={isOutOfStock}
       onClick={() => onAdd(product.id, product)}
-      className="relative flex aspect-square flex-col items-center justify-center gap-4 rounded-2xl bg-white p-6 text-center shadow-[0_4px_12px_rgba(61,12,2,0.08)] active:scale-[0.97]"
+      className={`relative flex aspect-square flex-col items-center justify-center gap-4 rounded-2xl p-6 text-center shadow-[0_4px_12px_rgba(61,12,2,0.08)] transition-all ${isOutOfStock ? 'bg-red-100 animate-pulse opacity-90 cursor-not-allowed border-2 border-red-300' : 'bg-white active:scale-[0.97]'}`}
     >
+      <div className={`absolute left-3 top-3 rounded-md px-2 py-1 text-[11px] font-bold shadow-sm transition-colors ${isOutOfStock ? 'bg-red-600 text-white' : 'bg-[#f8f3ec] text-[#54433f]'}`}>
+        Stock: {currentStock}
+      </div>
       {quantity > 0 && (
         <div className="absolute -right-2 -top-2 flex h-8 w-8 items-center justify-center rounded-full bg-[#E8A020] text-sm font-bold text-white">
           {quantity}
@@ -147,10 +156,40 @@ function POSPage() {
     isLoading,
     isError,
   } = useQuery({
-    queryKey: ["catalogue"],
+    queryKey: ["catalogue", "pos"],
     queryFn: fetchCatalogue,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 24 * 60 * 60 * 1000, // 24 hours
   });
+
+  const { data: inventoryData = [] } = useInventoryQuery();
+  const { data: rawMaterials = [] } = useRawMaterialsQuery();
+
+  // Build a unified stockMap:
+  // - Products tracked individually → stock from inventoryData
+  // - Products tracked via a base → stock from that base's inHandCount
+  const inventoryMap = useMemo(() => {
+    const map = {};
+
+    // 1. Seed with individual inventory
+    if (Array.isArray(inventoryData)) {
+      inventoryData.forEach((inv) => {
+        map[inv.productId] = inv.inHandCount || 0;
+      });
+    }
+
+    // 2. Override with base stock for linked products
+    if (Array.isArray(rawMaterials)) {
+      rawMaterials.forEach((rm) => {
+        const baseStock = rm.inHandCount || 0;
+        (rm.linkedProducts || []).forEach((p) => {
+          map[p.id] = baseStock;
+        });
+      });
+    }
+
+    return map;
+  }, [inventoryData, rawMaterials]);
 
   // seed lastSavedOrder from store when navigated from Orders → Go to Cart
   useEffect(() => {
@@ -237,6 +276,30 @@ function POSPage() {
     });
     return map;
   }, [cartItems]);
+
+  // Map: productId → baseId (for products tracked via a base)
+  const productToBaseId = useMemo(() => {
+    const map = {};
+    rawMaterials.forEach((rm) => {
+      (rm.linkedProducts || []).forEach((p) => {
+        map[p.id] = rm.id;
+      });
+    });
+    return map;
+  }, [rawMaterials]);
+
+  // Map: baseId → total cart qty consumed from that base
+  // (sum of cart quantities of ALL products linked to this base)
+  const baseCartQtyMap = useMemo(() => {
+    const map = {};
+    cartItems.forEach((item) => {
+      const baseId = productToBaseId[item.id];
+      if (baseId) {
+        map[baseId] = (map[baseId] || 0) + item.quantity;
+      }
+    });
+    return map;
+  }, [cartItems, productToBaseId]);
 
   const totalCartQty = useMemo(() => {
     return cartItems.reduce((sum, item) => sum + item.quantity, 0);
@@ -419,6 +482,8 @@ function POSPage() {
 
       // Background cache refresh
       queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["inventory"] });
+      queryClient.invalidateQueries({ queryKey: ["rawMaterials"] });
       if (order?.id) {
         queryClient.invalidateQueries({ queryKey: ["order", order.id] });
       }
@@ -461,6 +526,8 @@ function POSPage() {
 
       await queryClient.invalidateQueries({ queryKey: ["orders"] });
       await queryClient.invalidateQueries({ queryKey: ["order", order.id] });
+      queryClient.invalidateQueries({ queryKey: ["inventory"] });
+      queryClient.invalidateQueries({ queryKey: ["rawMaterials"] });
 
       showToast({
         type: "success",
@@ -896,14 +963,31 @@ function POSPage() {
               )}
 
               {!isLoading &&
-                visibleProducts.map((product) => (
-                  <ProductCard
-                    key={product.id}
-                    product={product}
-                    quantity={cartQtyMap[product.id] || 0}
-                    onAdd={addToCart}
-                  />
-                ))}
+                visibleProducts.map((product) => {
+                  const baseId = productToBaseId[product.id];
+                  const ownCartQty = cartQtyMap[product.id] || 0;
+
+                  let displayStockCount;
+                  if (baseId) {
+                    const totalBaseConsumed = baseCartQtyMap[baseId] || 0;
+                    const baseStock = inventoryMap[product.id] || 0;
+                    // Adjust so ProductCard's (stockCount - quantity) = baseStock - totalBaseConsumed
+                    // i.e. displayed remaining = base stock minus ALL linked items in cart
+                    displayStockCount = baseStock - totalBaseConsumed + ownCartQty;
+                  } else {
+                    displayStockCount = inventoryMap[product.id] || 0;
+                  }
+
+                  return (
+                    <ProductCard
+                      key={product.id}
+                      product={product}
+                      quantity={ownCartQty}          // badge: only THIS item's qty
+                      stockCount={displayStockCount} // adjusted for shared base deduction
+                      onAdd={addToCart}
+                    />
+                  );
+                })}
             </div>
           </section>
 

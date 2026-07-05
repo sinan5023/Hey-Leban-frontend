@@ -13,6 +13,7 @@ import { useAuthStore } from "../store/authStore";
 import SummaryPage from "../pages/SummaryPage";
 import SalesSessionsPage from "../pages/SalesSessionsPage";
 import BusinessReportPage from "../pages/BusinessReportPage";
+import InventoryPage from "../pages/InventoryPage";
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, isAuthLoading } = useAuthStore();
@@ -105,6 +106,14 @@ function AppRouter() {
         element={
           <ProtectedRoute>
             <MenuManagementPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/settings/inventory"
+        element={
+          <ProtectedRoute>
+            <InventoryPage />
           </ProtectedRoute>
         }
       />

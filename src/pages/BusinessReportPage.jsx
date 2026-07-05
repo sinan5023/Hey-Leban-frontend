@@ -47,20 +47,26 @@ export default function BusinessReportPage() {
     expected: Number(report.cashDrawer?.expectedCashInDrawer ?? 1300) 
   };
 
-  // Expenses Breakdown
-  const expensesList = report.expenses && report.expenses.length > 0 
-    ? report.expenses.map(e => ({
-        category: e.categoryName,
-        amount: Number(e.amount || 0),
-        date: e.expenseDate ? new Date(e.expenseDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "-",
-        note: e.note || "-"
-      }))
+  // Expenses Breakdown — grouped by category (summed for the filter period)
+  const rawExpenses = report.expenses && report.expenses.length > 0
+    ? report.expenses
     : [
-        { category: "Salary", amount: 450, date: "Oct 12, 2023", note: "Part-time staff weekly wages" },
-        { category: "Packaging", amount: 130, date: "Oct 12, 2023", note: "Premium Gift Boxes" },
-        { category: "Utilities", amount: 120, date: "Oct 11, 2023", note: "Internet + Power Top-up" },
-        { category: "Rent", amount: 200, date: "Oct 10, 2023", note: "Daily stall prorated rent" }
+        { categoryName: "Salary",     amount: 450, expenseDate: null },
+        { categoryName: "Packaging",  amount: 130, expenseDate: null },
+        { categoryName: "Utilities",  amount: 120, expenseDate: null },
+        { categoryName: "Rent",       amount: 200, expenseDate: null },
       ];
+
+  // Group by categoryName and sum amounts
+  const expensesMap = {};
+  rawExpenses.forEach(e => {
+    const cat = e.categoryName || "Other";
+    if (!expensesMap[cat]) expensesMap[cat] = 0;
+    expensesMap[cat] += Number(e.amount || 0);
+  });
+  const expensesList = Object.entries(expensesMap)
+    .map(([category, amount]) => ({ category, amount }))
+    .sort((a, b) => b.amount - a.amount);
 
   const maxExpenseAmount = Math.max(...expensesList.map(e => e.amount), 1);
 
@@ -354,68 +360,90 @@ export default function BusinessReportPage() {
 
         <div className="bg-white rounded-2xl shadow-[0_4px_16px_rgba(61,12,2,0.06)] border border-[#f2ede6] overflow-hidden">
           <div className="px-6 py-4 border-b border-[#f2ede6] flex justify-between items-center">
-            <h2 className="font-bold text-lg text-[#0e0100]">Operating Expenses Breakdown</h2>
-            <div className="flex gap-4">
-              <div className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-full bg-[#3d0c02]"></span>
-                <span className="text-[10px] font-bold text-[#54433f] uppercase">Staff</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-full bg-[#feb234]"></span>
-                <span className="text-[10px] font-bold text-[#54433f] uppercase">Admin</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-full bg-[#86736e]"></span>
-                <span className="text-[10px] font-bold text-[#54433f] uppercase">Utility</span>
-              </div>
+            <div>
+              <h2 className="font-bold text-lg text-[#0e0100]">Operating Expenses Breakdown</h2>
+              {(startDate && endDate) && (
+                <p className="text-[11px] text-[#54433f]/60 mt-0.5">
+                  Totals for {startDate} → {endDate}
+                </p>
+              )}
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] font-bold uppercase text-[#54433f]/60">Total</p>
+              <p className="text-[18px] font-extrabold text-[#ba1a1a]">
+                ₹{expensesList.reduce((s, e) => s + e.amount, 0).toFixed(2)}
+              </p>
             </div>
           </div>
           <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="space-y-6">
-              {expensesList.slice(0, 4).map((exp, idx) => {
-                const colors = ['bg-[#3d0c02]', 'bg-[#feb234]', 'bg-[#86736e]', 'bg-[#b27947]'];
+            {/* Bar chart — one bar per category */}
+            <div className="space-y-5">
+              {expensesList.slice(0, 6).map((exp, idx) => {
+                const colors = ['bg-[#3d0c02]', 'bg-[#feb234]', 'bg-[#86736e]', 'bg-[#b27947]', 'bg-[#a12c7b]', 'bg-[#437a22]'];
+                const pct = ((exp.amount / maxExpenseAmount) * 100).toFixed(1);
                 return (
                   <div key={idx}>
-                    <div className="flex justify-between text-xs font-bold mb-2">
+                    <div className="flex justify-between text-xs font-bold mb-1.5">
                       <span className="truncate pr-2">{exp.category}</span>
-                      <span className="text-[#0e0100]">₹{exp.amount.toFixed(2)}</span>
+                      <span className="text-[#0e0100]">₹{exp.amount.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
                     </div>
                     <div className="h-3 w-full bg-[#f2ede6] rounded-full overflow-hidden">
-                      <div className={`h-full ${colors[idx % colors.length]}`} style={{ width: `${(exp.amount / maxExpenseAmount) * 100}%` }}></div>
+                      <div
+                        className={`h-full ${colors[idx % colors.length]} transition-all duration-700`}
+                        style={{ width: `${pct}%` }}
+                      />
                     </div>
                   </div>
                 );
               })}
             </div>
-            
+
+            {/* Table — one row per category with period total */}
             <div className="lg:col-span-2 overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="text-[11px] font-bold text-[#54433f] uppercase tracking-wider border-b border-[#f2ede6]">
                     <th className="pb-3 px-2">Category</th>
-                    <th className="pb-3 px-2">Amount</th>
-                    <th className="pb-3 px-2">Date</th>
-                    <th className="pb-3 px-2">Note / Vendor</th>
-                    <th className="pb-3 px-2 text-right">Action</th>
+                    <th className="pb-3 px-2 text-right">Total Amount</th>
+                    <th className="pb-3 px-2 text-right">% of Expenses</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#f2ede6]">
-                  {expensesList.map((exp, idx) => (
-                    <tr key={idx} className="hover:bg-[#f2ede6] text-sm">
-                      <td className="py-3 px-2 font-bold text-[#0e0100]">{exp.category}</td>
-                      <td className="py-3 px-2 font-bold">₹{exp.amount.toFixed(2)}</td>
-                      <td className="py-3 px-2 text-[#54433f]">{exp.date}</td>
-                      <td className="py-3 px-2 text-xs">{exp.note}</td>
-                      <td className="py-3 px-2 text-right">
-                        <button className="text-[#86736e] hover:text-[#0e0100] transition-colors">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 inline" viewBox="0 0 20 20" fill="currentColor">
-                            <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-                          </svg>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {expensesList.map((exp, idx) => {
+                    const totalExp = expensesList.reduce((s, e) => s + e.amount, 0) || 1;
+                    const pct = ((exp.amount / totalExp) * 100).toFixed(1);
+                    const colors = ['bg-[#3d0c02]', 'bg-[#feb234]', 'bg-[#86736e]', 'bg-[#b27947]', 'bg-[#a12c7b]', 'bg-[#437a22]'];
+                    return (
+                      <tr key={idx} className="hover:bg-[#f2ede6] text-sm">
+                        <td className="py-3 px-2">
+                          <div className="flex items-center gap-2">
+                            <span className={`inline-block h-2.5 w-2.5 rounded-full shrink-0 ${colors[idx % colors.length]}`} />
+                            <span className="font-bold text-[#0e0100]">{exp.category}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-2 font-bold text-right text-[#ba1a1a]">
+                          ₹{exp.amount.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-3 px-2 text-right">
+                          <span className="inline-block rounded-full bg-[#f2ede6] px-2 py-0.5 text-[11px] font-bold text-[#54433f]">
+                            {pct}%
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-[#3d0c02]/20 bg-[#faf7f3]">
+                    <td className="py-3 px-2 text-[12px] font-bold text-[#54433f]">Total Expenses</td>
+                    <td className="py-3 px-2 font-extrabold text-right text-[#ba1a1a]">
+                      ₹{expensesList.reduce((s, e) => s + e.amount, 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="py-3 px-2 text-right">
+                      <span className="inline-block rounded-full bg-[#3d0c02] px-2 py-0.5 text-[11px] font-bold text-white">100%</span>
+                    </td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>

@@ -83,6 +83,16 @@ function SettingsPage() {
               buttonType="button"
               onClick={() => navigate("/settings/items")}
             />
+
+            <SettingsCard
+              title="Stock Management"
+              description="Monitor and update your artisanal inventory levels."
+              icon="📦"
+              tags={["In Stock", "Low Stock", "Out of Stock"]}
+              buttonLabel="Add Stock"
+              buttonType="button"
+              onClick={() => navigate("/settings/inventory")}
+            />
           </div>
 
           <div className="mt-16">

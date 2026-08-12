@@ -1,4 +1,5 @@
 import { useLocation, useNavigate } from "react-router-dom";
+import { useState, useMemo } from "react";
 import useBusinessReportQuery from "../hooks/reports/useBusinessReportQuery";
 
 export default function BusinessReportPage() {
@@ -12,6 +13,8 @@ export default function BusinessReportPage() {
   const { data, isLoading, isError } = useBusinessReportQuery({ sessionId, startDate, endDate });
 
   const report = data || {};
+
+  const [sellersPage, setSellersPage] = useState(1);
 
   // KPI mappings
   const grossRevenue = Number(report.orders?.totalRevenueAmount ?? 4280.50);
@@ -85,6 +88,19 @@ export default function BusinessReportPage() {
 
   const maxTopSellerQuantity = Math.max(...topSellers.map(i => i.quantitySold), 1);
 
+  // Reset page when report data changes
+  useMemo(() => {
+    setSellersPage(1);
+  }, [data]);
+
+  const itemsPerPage = 4;
+  const sellersTotalPages = Math.ceil(topSellers.length / itemsPerPage);
+  const activeSellersPage = Math.min(sellersPage, Math.max(sellersTotalPages, 1));
+  const paginatedSellers = useMemo(() => {
+    const startIndex = (activeSellersPage - 1) * itemsPerPage;
+    return topSellers.slice(startIndex, startIndex + itemsPerPage);
+  }, [topSellers, activeSellersPage]);
+
   // Peak Hours Calculation
   const peakHoursRaw = report.orders?.peakHours || [];
   let startHour = 9; // Default 9 AM
@@ -121,9 +137,14 @@ export default function BusinessReportPage() {
         <div className="flex items-center gap-4">
           <button onClick={() => navigate(-1)} className="hover:opacity-80">← Back</button>
         </div>
-        <div className="flex items-center gap-6">
-          <button className="hover:opacity-90 transition-opacity active:scale-95 duration-200">
-            <span className="text-xl">👤</span>
+        <h1 className="text-lg font-bold text-white uppercase tracking-wider">Business Report</h1>
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="flex items-center gap-1.5 rounded-full bg-[#feb234] px-4 py-1.5 text-[12px] font-bold text-[#3d0c02] transition hover:bg-[#ffd06a]"
+          >
+            <span>⬇</span> Export PDF
           </button>
         </div>
       </header>
@@ -339,7 +360,7 @@ export default function BusinessReportPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#f2ede6]">
-                  {topSellers.map((item, idx) => (
+                  {paginatedSellers.map((item, idx) => (
                     <tr key={idx} className="hover:bg-[#f2ede6] text-sm">
                       <td className="py-3 px-2 font-bold text-[#0e0100]">{item.itemName}</td>
                       <td className="py-3 px-2 text-[#54433f] font-medium">{item.quantitySold} units</td>
@@ -354,6 +375,32 @@ export default function BusinessReportPage() {
                   ))}
                 </tbody>
               </table>
+
+              {sellersTotalPages > 1 && (
+                <div className="flex items-center justify-between mt-4 pt-3 border-t border-[#f2ede6]">
+                  <p className="text-xs text-[#54433f]/60 font-semibold">
+                    Page {activeSellersPage} of {sellersTotalPages}
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={activeSellersPage === 1}
+                      onClick={() => setSellersPage((p) => Math.max(1, p - 1))}
+                      className="rounded-lg border border-[#d9c1bc] bg-white px-2.5 py-1 text-xs font-bold text-[#54433f] transition hover:bg-[#f3ede7] disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      ← Prev
+                    </button>
+                    <button
+                      type="button"
+                      disabled={activeSellersPage === sellersTotalPages}
+                      onClick={() => setSellersPage((p) => Math.min(sellersTotalPages, p + 1))}
+                      className="rounded-lg border border-[#d9c1bc] bg-white px-2.5 py-1 text-xs font-bold text-[#54433f] transition hover:bg-[#f3ede7] disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Next →
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

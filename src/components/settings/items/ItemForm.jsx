@@ -156,6 +156,9 @@ function ItemForm({
       description: form.description.trim() || null,
       price: Number(form.price),
       sortOrder: form.sortOrder === "" ? 0 : Number(form.sortOrder),
+    }, {
+      trackingMode,
+      selectedBaseId,
     });
   };
 
@@ -424,92 +427,90 @@ function ItemForm({
             </div>
           </div>
 
-          {/* ── Inventory Tracking (only shown when editing an existing item) ── */}
-          {editingItem && (
-            <div className="rounded-xl border border-[#ded9d3] bg-[#f8f3ec]/60 p-4 space-y-3">
-              <div>
-                <p className="text-sm font-extrabold text-[#3d0c02]">
-                  🗄️ Inventory Tracking
-                </p>
-                <p className="text-xs text-[#54433f] mt-0.5">
-                  Choose how stock is tracked when this product is ordered.
-                </p>
-              </div>
-
-              {/* Toggle buttons */}
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleTrackingModeChange("individual")}
-                  className={`flex flex-col items-center justify-center gap-1 rounded-xl py-3 px-2 text-center font-bold transition-all border-2 ${
-                    trackingMode === "individual"
-                      ? "border-[#3d0c02] bg-[#3d0c02] text-white"
-                      : "border-[#ded9d3] bg-white text-[#54433f] hover:border-[#3d0c02]"
-                  }`}
-                >
-                  <span className="text-base leading-none">📦</span>
-                  <span className="text-[11px] leading-tight">Track Individually</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTrackingMode("base");
-                    setTrackingChanged(true);
-                  }}
-                  className={`flex flex-col items-center justify-center gap-1 rounded-xl py-3 px-2 text-center font-bold transition-all border-2 ${
-                    trackingMode === "base"
-                      ? "border-[#3d0c02] bg-[#3d0c02] text-white"
-                      : "border-[#ded9d3] bg-white text-[#54433f] hover:border-[#3d0c02]"
-                  }`}
-                >
-                  <span className="text-base leading-none">🔗</span>
-                  <span className="text-[11px] leading-tight">Track via Base</span>
-                </button>
-              </div>
-
-              {/* Base selector */}
-              {trackingMode === "base" && (
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-bold text-[#3d0c02]">
-                    Select Raw Material Base
-                  </label>
-                  {rawMaterials.length === 0 ? (
-                    <p className="text-xs text-[#54433f] italic">
-                      No raw materials found. Create one in the Inventory page first.
-                    </p>
-                  ) : (
-                    <select
-                      value={selectedBaseId}
-                      onChange={(e) => handleBaseSelection(e.target.value)}
-                      disabled={linkLoading}
-                      className={`h-10 w-full rounded-xl border border-[#ded9d3] bg-white px-3 text-sm outline-none focus:border-[#E8A020] transition-colors ${
-                        linkLoading ? "opacity-60 cursor-not-allowed" : ""
-                      }`}
-                    >
-                      <option value="">-- Choose a base --</option>
-                      {rawMaterials.map((rm) => (
-                        <option key={rm.id} value={rm.id}>
-                          {rm.name} ({rm.inHandCount} in stock)
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  {linkLoading && (
-                    <p className="text-xs text-[#54433f] flex items-center gap-1">
-                      <span className="inline-block w-3 h-3 border-2 border-[#3d0c02] border-t-transparent rounded-full animate-spin" />
-                      Saving link...
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {trackingMode === "individual" && (
-                <p className="text-xs text-[#54433f] bg-white rounded-lg px-3 py-2 border border-[#ded9d3]">
-                  Stock is tracked per product. Use the Inventory page to update counts directly.
-                </p>
-              )}
+          {/* ── Inventory Tracking ── */}
+          <div className="rounded-xl border border-[#ded9d3] bg-[#f8f3ec]/60 p-4 space-y-3">
+            <div>
+              <p className="text-sm font-extrabold text-[#3d0c02]">
+                🗄️ Inventory Tracking
+              </p>
+              <p className="text-xs text-[#54433f] mt-0.5">
+                Choose how stock is tracked when this product is ordered.
+              </p>
             </div>
-          )}
+
+            {/* Toggle buttons */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => handleTrackingModeChange("individual")}
+                className={`flex flex-col items-center justify-center gap-1 rounded-xl py-3 px-2 text-center font-bold transition-all border-2 ${
+                  trackingMode === "individual"
+                    ? "border-[#3d0c02] bg-[#3d0c02] text-white"
+                    : "border-[#ded9d3] bg-white text-[#54433f] hover:border-[#3d0c02]"
+                }`}
+              >
+                <span className="text-base leading-none">📦</span>
+                <span className="text-[11px] leading-tight">Track Individually</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTrackingMode("base");
+                  setTrackingChanged(true);
+                }}
+                className={`flex flex-col items-center justify-center gap-1 rounded-xl py-3 px-2 text-center font-bold transition-all border-2 ${
+                  trackingMode === "base"
+                    ? "border-[#3d0c02] bg-[#3d0c02] text-white"
+                    : "border-[#ded9d3] bg-white text-[#54433f] hover:border-[#3d0c02]"
+                }`}
+              >
+                <span className="text-base leading-none">🔗</span>
+                <span className="text-[11px] leading-tight">Track via Base</span>
+              </button>
+            </div>
+
+            {/* Base selector */}
+            {trackingMode === "base" && (
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-[#3d0c02]">
+                  Select Raw Material Base
+                </label>
+                {rawMaterials.length === 0 ? (
+                  <p className="text-xs text-[#54433f] italic">
+                    No raw materials found. Create one in the Inventory page first.
+                  </p>
+                ) : (
+                  <select
+                    value={selectedBaseId}
+                    onChange={(e) => handleBaseSelection(e.target.value)}
+                    disabled={linkLoading}
+                    className={`h-10 w-full rounded-xl border border-[#ded9d3] bg-white px-3 text-sm outline-none focus:border-[#E8A020] transition-colors ${
+                      linkLoading ? "opacity-60 cursor-not-allowed" : ""
+                    }`}
+                  >
+                    <option value="">-- Choose a base --</option>
+                    {rawMaterials.map((rm) => (
+                      <option key={rm.id} value={rm.id}>
+                        {rm.name} ({rm.inHandCount} in stock)
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {linkLoading && (
+                  <p className="text-xs text-[#54433f] flex items-center gap-1">
+                    <span className="inline-block w-3 h-3 border-2 border-[#3d0c02] border-t-transparent rounded-full animate-spin" />
+                    Saving link...
+                  </p>
+                )}
+              </div>
+            )}
+
+            {trackingMode === "individual" && (
+              <p className="text-xs text-[#54433f] bg-white rounded-lg px-3 py-2 border border-[#ded9d3]">
+                Stock is tracked per product. Use the Inventory page to update counts directly.
+              </p>
+            )}
+          </div>
 
           <div className="flex gap-3 pt-2">
             <button

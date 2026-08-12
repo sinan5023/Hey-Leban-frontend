@@ -1,8 +1,9 @@
-// src/pages/InventoryPage.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import CreateRawMaterialModal from "../components/inventory/CreateRawMaterialModal";
 import RawMaterialStockModal from "../components/inventory/RawMaterialStockModal";
+import LinkItemsModal from "../components/inventory/LinkItemsModal";
+import { useItemMutations } from "../hooks/items/useItemMutations";
 import { useRawMaterialsQuery } from "../hooks/rawMaterials/useRawMaterialsQuery";
 import { useRawMaterialsMutations } from "../hooks/rawMaterials/useRawMaterialsMutations";
 import { useCatalogueQuery } from "../hooks/items/useCatalogueQuery";
@@ -65,10 +66,14 @@ function RawMaterialsTab({ onToast }) {
   const { data: rawMaterials = [], isLoading } = useRawMaterialsQuery();
   const { createRawMaterialMutation, updateRawMaterialStockMutation } =
     useRawMaterialsMutations();
+  const { data: categories = [] } = useCatalogueQuery();
+  const { linkIngredientMutation, unlinkIngredientMutation } = useItemMutations();
 
   const [search, setSearch] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [stockModal, setStockModal] = useState({ open: false, material: null });
+  const [linkModal, setLinkModal] = useState({ open: false, material: null });
+  const [isLinkingLoading, setIsLinkingLoading] = useState(false);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -102,6 +107,35 @@ function RawMaterialsTab({ onToast }) {
     } catch (err) {
       const msg = err?.response?.data?.message || "Failed to update stock.";
       onToast({ type: "error", title: "Update Failed", message: msg });
+    }
+  };
+
+  const handleLinkItems = async (toLink, toUnlink) => {
+    setIsLinkingLoading(true);
+    try {
+      const promises = [
+        ...toLink.map((productId) =>
+          linkIngredientMutation.mutateAsync({
+            productId,
+            rawMaterialId: linkModal.material.id,
+          })
+        ),
+        ...toUnlink.map((productId) =>
+          unlinkIngredientMutation.mutateAsync({ productId })
+        ),
+      ];
+      await Promise.all(promises);
+      setLinkModal({ open: false, material: null });
+      onToast({
+        type: "success",
+        title: "Links Updated",
+        message: `Successfully updated item links for ${linkModal.material.name}.`,
+      });
+    } catch (err) {
+      const msg = err?.response?.data?.message || "Failed to update links.";
+      onToast({ type: "error", title: "Update Failed", message: msg });
+    } finally {
+      setIsLinkingLoading(false);
     }
   };
 
@@ -196,12 +230,20 @@ function RawMaterialsTab({ onToast }) {
                   </div>
 
                   {/* Status + action */}
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     <span
                       className={`px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${status.cls}`}
                     >
                       {status.label}
                     </span>
+                    <button
+                      onClick={() =>
+                        setLinkModal({ open: true, material })
+                      }
+                      className="h-10 px-3 border border-dashed border-[#54433f]/40 hover:border-[#3d0c02] text-[#54433f] hover:text-[#3d0c02] rounded-xl text-sm font-bold transition-all whitespace-nowrap flex items-center gap-1.5"
+                    >
+                      <span>🔗</span> Link Items
+                    </button>
                     <button
                       onClick={() =>
                         setStockModal({ open: true, material })
@@ -249,6 +291,18 @@ function RawMaterialsTab({ onToast }) {
         onSubmit={handleStockUpdate}
         isLoading={updateRawMaterialStockMutation.isPending}
       />
+      {linkModal.open && (
+        <LinkItemsModal
+          key={linkModal.material?.id || "link-items"}
+          isOpen={linkModal.open}
+          material={linkModal.material}
+          categories={categories}
+          rawMaterials={rawMaterials}
+          onClose={() => setLinkModal({ open: false, material: null })}
+          onSubmit={handleLinkItems}
+          isLoading={isLinkingLoading}
+        />
+      )}
     </>
   );
 }

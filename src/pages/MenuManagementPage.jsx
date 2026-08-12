@@ -119,7 +119,7 @@ function MenuManagementPage() {
         }
     }, [isError, error]);
 
-    const handleSubmitItem = async (payload) => {
+    const handleSubmitItem = async (payload, trackingInfo = {}) => {
         try {
             if (editingItem?.id) {
                 await updateItemMutation.mutateAsync({ id: editingItem.id, payload });
@@ -133,7 +133,19 @@ function MenuManagementPage() {
                 return;
             }
 
-            await createItemMutation.mutateAsync(payload);
+            const createdProduct = await createItemMutation.mutateAsync(payload);
+
+            if (trackingInfo.trackingMode === "base" && trackingInfo.selectedBaseId) {
+                try {
+                    await linkIngredientMutation.mutateAsync({
+                        productId: createdProduct.id,
+                        rawMaterialId: trackingInfo.selectedBaseId,
+                    });
+                } catch (linkErr) {
+                    console.error("Failed to auto-link base during creation", linkErr);
+                }
+            }
+
             showToast({
                 type: "success",
                 title: "Product created",

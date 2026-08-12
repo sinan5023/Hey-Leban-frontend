@@ -1,17 +1,20 @@
+
 // src/utils/printHelpers.js
+import { useAuthStore } from "../store/authStore";
 
 /**
  * Transforms the raw order and KOT data into the exact structure
  * expected by the React Native app.
  */
 const formatPayload = (printType, orderData, kotData = null) => {
+  const shop = useAuthStore.getState().shop || {};
   return {
     printType: printType, // "KOT" | "BILL" | "BOTH"
     shop: {
-      name: "feel Leban",
-      address: "Edavannappara, Malappuram",
-      phone: "+91 6381-554322",
-      email: "hello@heylaban.com"
+      name: shop.name || "",
+      address: shop.address || "",
+      phone: shop.phone || "",
+      email: shop.email || ""
     },
     // Fallback to "Cashier" if user data isn't in the order object
     cashierName: orderData.user?.name || orderData.cashier?.name || "Cashier",

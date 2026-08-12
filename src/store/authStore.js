@@ -1,10 +1,13 @@
 
+
 import { create } from "zustand";
 import api from "../services/api";
 import { useSessionStore } from "./sessionStore";
+import { getShopDetails } from "../services/profileService";
 
 export const useAuthStore = create((set) => ({
   user: null,
+  shop: null,
   isAuthenticated: false,
   isAuthLoading: true,
 
@@ -20,11 +23,20 @@ export const useAuthStore = create((set) => ({
         isAuthenticated: true,
         isAuthLoading: false,
       });
+
+      // Fetch shop details after successful refresh
+      try {
+        const shop = await getShopDetails();
+        set({ shop });
+      } catch {
+        // Non-critical — print will just fall back to empty values
+      }
     } catch {
       window.accessToken = null;
 
       set({
         user: null,
+        shop: null,
         isAuthenticated: false,
         isAuthLoading: false,
       });
@@ -43,6 +55,14 @@ export const useAuthStore = create((set) => ({
       isAuthLoading: false,
     });
 
+    // Fetch shop details after successful login
+    try {
+      const shop = await getShopDetails();
+      set({ shop });
+    } catch {
+      // Non-critical
+    }
+
     return user;
   },
 
@@ -58,6 +78,7 @@ export const useAuthStore = create((set) => ({
 
     set({
       user: null,
+      shop: null,
       isAuthenticated: false,
       isAuthLoading: false,
     });
@@ -75,6 +96,7 @@ export const useAuthStore = create((set) => ({
 
     set({
       user: null,
+      shop: null,
       isAuthenticated: false,
       isAuthLoading: false,
     });

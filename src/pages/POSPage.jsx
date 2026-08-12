@@ -14,9 +14,10 @@ import { useDebouncedValue } from "../hooks/orders/useDebouncedValue";
 import { useTicketSearchQuery } from "../hooks/orders/useTicketSearchQuery";
 import { useOrdersQuery } from "../hooks/orders/useOrdersQuery";
 import OrdersSearchDropdown from "../components/orders/OrdersSearchDropdown";
-import { printBoth } from "../utils/printHelpers";
+import { printBoth, printBill, printKOT } from "../utils/printHelpers";
 import { useInventoryQuery } from "../hooks/inventory/useInventoryQuery";
 import { useRawMaterialsQuery } from "../hooks/rawMaterials/useRawMaterialsQuery";
+import TinderCardStack from "../components/pos/TinderCardStack";
 
 const formatMoney = (value) => {
   const numeric = Number(value || 0);
@@ -24,7 +25,7 @@ const formatMoney = (value) => {
 };
 
 const ProductCard = memo(({ product, quantity, stockCount, onAdd }) => {
-  const currentStock = stockCount - quantity;
+  const currentStock = stockCount;
   const isOutOfStock = currentStock <= 0;
 
   return (
@@ -109,6 +110,8 @@ function POSPage() {
   const [toast, setToast] = useState(null);
 
   const [kotLoading, setKotLoading] = useState(false);
+  const [billLoading, setBillLoading] = useState(false);
+  const [bothLoading, setBothLoading] = useState(false);
   const [lastKot, setLastKot] = useState(null);
   const [isCartDirty, setIsCartDirty] = useState(false);
 
@@ -123,6 +126,7 @@ function POSPage() {
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isSwipeMode, setIsSwipeMode] = useState(false);
 
   const [showDiscountEditor, setShowDiscountEditor] = useState(false);
   const [discountInput, setDiscountInput] = useState("");
@@ -421,64 +425,85 @@ function POSPage() {
     }
   };
 
-  const handlePrintKOT = async () => {
+  const handlePrintAction = async (type) => {
+    // type: "BILL" | "KOT" | "BOTH"
     setLastKot(null);
 
     if (cartItems.length === 0 && !lastSavedOrder?.id) {
       showToast({
         type: "error",
         title: "Cart empty",
-        message: "Please add items before printing KOT.",
+        message: `Please add items before printing ${type}.`,
       });
       return;
     }
 
     try {
-      setKotLoading(true);
+      if (type === "BILL") setBillLoading(true);
+      else if (type === "KOT") setKotLoading(true);
+      else if (type === "BOTH") setBothLoading(true);
 
-      let order, kot;
+      let order = null;
+      let kot = null;
 
-      if (!lastSavedOrder?.id) {
-        // ── NEW ORDER: Single API call creates both order + KOT ──
-        const payload = {
-          ...buildOrderPayload(),
-          kotNote: orderNote.trim() || null,
-        };
-        const result = await createOrderWithKot(payload);
-        order = result.order;
-        kot = result.kot;
-      } else if (isCartDirty) {
-        // ── EDITED ORDER: Update order first, then create KOT ──
-        order = await ensureOrderForCart();
-        kot = await createKot(order.id, {
-          note: orderNote.trim() || null,
-        });
+      if (type === "KOT" || type === "BOTH") {
+        if (!lastSavedOrder?.id) {
+          // ── NEW ORDER WITH KOT: Single API call creates both order + KOT ──
+          const payload = {
+            ...buildOrderPayload(),
+            kotNote: orderNote.trim() || null,
+          };
+          const result = await createOrderWithKot(payload);
+          order = result.order;
+          kot = result.kot;
+        } else if (isCartDirty) {
+          // ── EDITED ORDER: Update order first, then create KOT ──
+          order = await ensureOrderForCart();
+          kot = await createKot(order.id, {
+            note: orderNote.trim() || null,
+          });
+        } else {
+          // ── REPRINT: Order unchanged, just create KOT ──
+          order = lastSavedOrder;
+          kot = await createKot(order.id, {
+            note: orderNote.trim() || null,
+          });
+        }
       } else {
-        // ── REPRINT: Order unchanged, just create KOT (1 API call) ──
-        order = lastSavedOrder;
-        kot = await createKot(order.id, {
-          note: orderNote.trim() || null,
-        });
+        // type === "BILL"
+        // ── Just ensure order exists on backend ──
+        order = await ensureOrderForCart();
       }
 
-      // Ensure we have the full order payload before printing (restored carts only have {id, orderNo})
+      // Ensure we have the full order payload before printing
       if (!order.orderItems || !order.createdAt) {
         order = await fetchOrderById(order.id);
       }
 
-      // Fire print IMMEDIATELY
-      printBoth(kot, order);
+      // Fire print via bridge
+      if (type === "BILL") {
+        printBill(order);
+      } else if (type === "KOT") {
+        printKOT(kot, order);
+      } else if (type === "BOTH") {
+        printBoth(kot, order);
+      }
 
-      // Update UI state
+      // Update UI states
       setLastSavedOrder(order);
-      setLastKot(kot);
+      if (kot) setLastKot(kot);
       setIsCartDirty(false);
 
       showToast({
         type: "success",
-        title: kot.status === "REPRINTED" ? "KOT reprinted" : "KOT printed",
-        message: `${kot.kotNo} • Times printed: ${kot.timesPrinted}`,
+        title: `${type === "BOTH" ? "Bill & KOT" : type} printed`,
+        message: `${order.orderNo}${kot ? ` • ${kot.kotNo}` : ""}`,
       });
+
+      // Clear cart ONLY for BILL and BOTH print actions
+      if (type === "BILL" || type === "BOTH") {
+        resetCurrentOrderFlow();
+      }
 
       // Background cache refresh
       queryClient.invalidateQueries({ queryKey: ["orders"] });
@@ -489,14 +514,16 @@ function POSPage() {
       }
     } catch (err) {
       const message =
-        err?.response?.data?.message || err?.message || "Failed to print KOT.";
+        err?.response?.data?.message || err?.message || `Failed to print ${type}.`;
       showToast({
         type: "error",
-        title: "KOT failed",
+        title: "Print failed",
         message,
       });
     } finally {
-      setKotLoading(false);
+      if (type === "BILL") setBillLoading(false);
+      else if (type === "KOT") setKotLoading(false);
+      else if (type === "BOTH") setBothLoading(false);
     }
   };
 
@@ -514,9 +541,6 @@ function POSPage() {
           title: "Order saved",
           message: `${order.orderNo} saved as unpaid.`,
         });
-        setTimeout(() => {
-          resetCurrentOrderFlow();
-        }, 1000);
         return order;
       }
 
@@ -534,10 +558,6 @@ function POSPage() {
         title: "Payment completed",
         message: `${response.orderNo || order.orderNo} paid successfully.`,
       });
-
-      setTimeout(() => {
-        resetCurrentOrderFlow();
-      }, 1000);
 
       return response;
     } catch (err) {
@@ -645,6 +665,32 @@ function POSPage() {
   };
 
   // ── Swipe handling for categories ──
+  const [slideDirection, setSlideDirection] = useState("left");
+  const [animKey, setAnimKey] = useState(0);
+  const [prevCategoryId, setPrevCategoryId] = useState(selectedCategoryId);
+
+  useEffect(() => {
+    if (selectedCategoryId !== prevCategoryId) {
+      if (prevCategoryId !== null) {
+        const prevIdx = visibleCategories.findIndex((c) => c.id === prevCategoryId);
+        const newIdx = visibleCategories.findIndex((c) => c.id === selectedCategoryId);
+
+        if (prevIdx !== -1 && newIdx !== -1) {
+          if (newIdx > prevIdx) {
+            setSlideDirection("left");
+          } else {
+            setSlideDirection("right");
+          }
+          setAnimKey((prev) => prev + 1);
+        } else {
+          setSlideDirection("left");
+          setAnimKey((prev) => prev + 1);
+        }
+      }
+      setPrevCategoryId(selectedCategoryId);
+    }
+  }, [selectedCategoryId, prevCategoryId, visibleCategories]);
+
   const touchStartRef = useRef(null);
   const touchEndRef = useRef(null);
   const minSwipeDistance = 50;
@@ -897,15 +943,37 @@ function POSPage() {
 
         <main className="flex flex-1 flex-col lg:flex-row lg:overflow-hidden">
           {/* ── Left: Product catalogue ── */}
-          <section className="flex w-full lg:w-[60%] flex-col border-b lg:border-b-0 lg:border-r border-[#ded9d3]">
-            <div className="border-b border-[#ded9d3] bg-white/50 p-3 lg:p-4 shrink-0">
-              <input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-10 lg:h-12 w-full rounded-xl bg-[#ece7e1] px-4 text-[#3d0c02] placeholder:text-[#3d0c02]/40 focus:outline-none"
-                placeholder="Search products..."
-                type="text"
-              />
+          <section className="flex w-full lg:w-[60%] flex-col border-b lg:border-b-0 lg:border-r border-[#ded9d3] overflow-hidden">
+            <div className="border-b border-[#ded9d3] bg-white/50 p-3 lg:p-4 shrink-0 flex items-center gap-3">
+              <div className="flex-1">
+                <input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="h-10 lg:h-12 w-full rounded-xl bg-[#ece7e1] px-4 text-[#3d0c02] placeholder:text-[#3d0c02]/40 focus:outline-none"
+                  placeholder="Search products..."
+                  type="text"
+                />
+              </div>
+              <div className="flex bg-[#ece7e1] p-1 rounded-xl shrink-0 lg:hidden">
+                <button
+                  type="button"
+                  onClick={() => setIsSwipeMode(false)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    !isSwipeMode ? "bg-[#3d0c02] text-white shadow-sm" : "text-[#54433f]"
+                  }`}
+                >
+                  Grid
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsSwipeMode(true)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    isSwipeMode ? "bg-[#3d0c02] text-white shadow-sm" : "text-[#54433f]"
+                  }`}
+                >
+                  Swipe
+                </button>
+              </div>
             </div>
 
             <nav className="bg-white/50 p-3 lg:p-4 shrink-0">
@@ -936,59 +1004,64 @@ function POSPage() {
               </div>
             </nav>
 
-            <div 
-              className="grid flex-1 grid-cols-2 md:grid-cols-3 content-start gap-4 lg:gap-6 overflow-y-auto p-4 lg:p-6 min-h-[50vh] lg:min-h-0"
-              onTouchStart={onTouchStart}
-              onTouchMove={onTouchMove}
-              onTouchEnd={onTouchEnd}
-            >
-              {isLoading &&
-                [1, 2, 3, 4, 5, 6].map((i) => (
-                  <div
-                    key={i}
-                    className="aspect-square animate-pulse rounded-2xl bg-[#ece7e1]"
-                  />
-                ))}
-
-              {isError && (
-                <div className="col-span-3 flex h-full items-center justify-center text-red-500">
-                  Failed to load products. Please refresh.
-                </div>
-              )}
-
-              {!isLoading && !isError && visibleProducts.length === 0 && (
-                <div className="col-span-3 flex h-40 items-center justify-center text-[#3d0c02]/40">
-                  No products found
-                </div>
-              )}
-
-              {!isLoading &&
-                visibleProducts.map((product) => {
-                  const baseId = productToBaseId[product.id];
-                  const ownCartQty = cartQtyMap[product.id] || 0;
-
-                  let displayStockCount;
-                  if (baseId) {
-                    const totalBaseConsumed = baseCartQtyMap[baseId] || 0;
-                    const baseStock = inventoryMap[product.id] || 0;
-                    // Adjust so ProductCard's (stockCount - quantity) = baseStock - totalBaseConsumed
-                    // i.e. displayed remaining = base stock minus ALL linked items in cart
-                    displayStockCount = baseStock - totalBaseConsumed + ownCartQty;
-                  } else {
-                    displayStockCount = inventoryMap[product.id] || 0;
-                  }
-
-                  return (
-                    <ProductCard
-                      key={product.id}
-                      product={product}
-                      quantity={ownCartQty}          // badge: only THIS item's qty
-                      stockCount={displayStockCount} // adjusted for shared base deduction
-                      onAdd={addToCart}
+            {isSwipeMode ? (
+              <TinderCardStack
+                products={visibleProducts}
+                cartQtyMap={cartQtyMap}
+                inventoryMap={inventoryMap}
+                baseCartQtyMap={baseCartQtyMap}
+                productToBaseId={productToBaseId}
+                addToCart={addToCart}
+              />
+            ) : (
+              <div 
+                key={animKey}
+                className={`grid flex-1 grid-cols-2 md:grid-cols-3 content-start gap-4 lg:gap-6 overflow-y-auto p-4 lg:p-6 min-h-[50vh] lg:min-h-0 ${
+                  slideDirection === "left" ? "animate-slide-left" : "animate-slide-right"
+                }`}
+                onTouchStart={onTouchStart}
+                onTouchMove={onTouchMove}
+                onTouchEnd={onTouchEnd}
+              >
+                {isLoading &&
+                  [1, 2, 3, 4, 5, 6].map((i) => (
+                    <div
+                      key={i}
+                      className="aspect-square animate-pulse rounded-2xl bg-[#ece7e1]"
                     />
-                  );
-                })}
-            </div>
+                  ))}
+
+                {isError && (
+                  <div className="col-span-3 flex h-full items-center justify-center text-red-500">
+                    Failed to load products. Please refresh.
+                  </div>
+                )}
+
+                {!isLoading && !isError && visibleProducts.length === 0 && (
+                  <div className="col-span-3 flex h-40 items-center justify-center text-[#3d0c02]/40">
+                    No products found
+                  </div>
+                )}
+
+                {!isLoading &&
+                  visibleProducts.map((product) => {
+                    const baseId = productToBaseId[product.id];
+                    const ownCartQty = cartQtyMap[product.id] || 0;
+
+                    const displayStockCount = inventoryMap[product.id] || 0;
+
+                    return (
+                      <ProductCard
+                        key={product.id}
+                        product={product}
+                        quantity={ownCartQty}
+                        stockCount={displayStockCount}
+                        onAdd={addToCart}
+                      />
+                    );
+                  })}
+              </div>
+            )}
           </section>
 
           {/* ── Right: Cart ── */}
@@ -1179,25 +1252,62 @@ function POSPage() {
 
               {/* Action buttons */}
               <div className="flex flex-col gap-2">
-                {/* Print KOT */}
+                {/* Print options */}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handlePrintAction("KOT")}
+                    disabled={
+                      (cartItems.length === 0 && !lastSavedOrder?.id) ||
+                      kotLoading || billLoading || bothLoading
+                    }
+                    className={`flex-1 flex h-10 items-center justify-center gap-2 rounded-xl border-2 text-xs font-bold transition-all ${
+                      (cartItems.length === 0 && !lastSavedOrder?.id) ||
+                      kotLoading || billLoading || bothLoading
+                        ? "cursor-not-allowed border-gray-300 text-gray-400"
+                        : "border-[#3d0c02] text-[#3d0c02] hover:bg-[#3d0c02]/5"
+                    }`}
+                  >
+                    {kotLoading ? "Printing KOT..." : "Print KOT"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handlePrintAction("BILL")}
+                    disabled={
+                      (cartItems.length === 0 && !lastSavedOrder?.id) ||
+                      kotLoading || billLoading || bothLoading
+                    }
+                    className={`flex-1 flex h-10 items-center justify-center gap-2 rounded-xl border-2 text-xs font-bold transition-all ${
+                      (cartItems.length === 0 && !lastSavedOrder?.id) ||
+                      kotLoading || billLoading || bothLoading
+                        ? "cursor-not-allowed border-gray-300 text-gray-400"
+                        : "border-[#3d0c02] text-[#3d0c02] hover:bg-[#3d0c02]/5"
+                    }`}
+                  >
+                    {billLoading ? "Printing Bill..." : "Print Bill"}
+                  </button>
+                </div>
+
                 <button
                   type="button"
-                  onClick={handlePrintKOT}
+                  onClick={() => handlePrintAction("BOTH")}
                   disabled={
                     (cartItems.length === 0 && !lastSavedOrder?.id) ||
-                    kotLoading
+                    kotLoading || billLoading || bothLoading
                   }
-                  className={`flex h-10 w-full items-center justify-center gap-2 rounded-xl border-2 text-sm font-bold ${(cartItems.length === 0 && !lastSavedOrder?.id) ||
-                      kotLoading
+                  className={`flex h-10 w-full items-center justify-center gap-2 rounded-xl border-2 text-xs font-bold transition-all ${
+                    (cartItems.length === 0 && !lastSavedOrder?.id) ||
+                    kotLoading || billLoading || bothLoading
                       ? "cursor-not-allowed border-gray-300 text-gray-400"
-                      : "border-[#3d0c02] text-[#3d0c02]"
-                    }`}
+                      : "border-[#3d0c02] text-[#3d0c02] hover:bg-[#3d0c02]/5"
+                  }`}
                 >
-                  {kotLoading ? "Printing KOT..." : "Print KOT"}
+                  {bothLoading ? "Printing..." : "Print Bill & KOT"}
                 </button>
 
                 {/* Collect Payment + Save */}
-                <div className="flex h-12 gap-2">
+                <div className="flex h-12 gap-2 mt-1">
                   <button
                     type="button"
                     onClick={() => setShowPaymentModal(true)}

@@ -2,7 +2,6 @@
 import { useState } from "react";
 
 function RawMaterialStockModal({ isOpen, material, onClose, onSubmit, isLoading }) {
-  const [mode, setMode] = useState("add"); // "add" | "set"
   const [quantity, setQuantity] = useState(0);
   const [note, setNote] = useState("");
 
@@ -10,27 +9,21 @@ function RawMaterialStockModal({ isOpen, material, onClose, onSubmit, isLoading 
     setQuantity((prev) => Math.max(0, prev + delta));
 
   const handleClose = () => {
-    setMode("add");
     setQuantity(0);
     setNote("");
     onClose();
   };
 
   const handleConfirm = () => {
-    if (quantity <= 0 && mode === "add") return;
-    const payload = {};
-    if (mode === "add") payload.addQuantity = quantity;
-    else payload.setQuantity = quantity;
+    if (quantity <= 0) return;
+    const payload = { addQuantity: quantity };
     if (note.trim()) payload.note = note.trim();
     onSubmit(payload);
   };
 
   if (!isOpen || !material) return null;
 
-  const previewStock =
-    mode === "add"
-      ? material.inHandCount + quantity
-      : quantity;
+  const previewStock = material.inHandCount + quantity;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -60,30 +53,6 @@ function RawMaterialStockModal({ isOpen, material, onClose, onSubmit, isLoading 
               ×
             </button>
           </div>
-
-          {/* Mode toggle */}
-          <div className="flex gap-2 mt-4">
-            <button
-              onClick={() => { setMode("add"); setQuantity(0); }}
-              className={`flex-1 h-10 rounded-xl text-sm font-bold transition-all ${
-                mode === "add"
-                  ? "bg-[#3d0c02] text-white shadow"
-                  : "bg-white border border-[#ded9d3] text-[#54433f]"
-              }`}
-            >
-              ➕ Add / Subtract
-            </button>
-            <button
-              onClick={() => { setMode("set"); setQuantity(0); }}
-              className={`flex-1 h-10 rounded-xl text-sm font-bold transition-all ${
-                mode === "set"
-                  ? "bg-[#3d0c02] text-white shadow"
-                  : "bg-white border border-[#ded9d3] text-[#54433f]"
-              }`}
-            >
-              ✏️ Set Exact Count
-            </button>
-          </div>
         </div>
 
         {/* Body */}
@@ -91,7 +60,7 @@ function RawMaterialStockModal({ isOpen, material, onClose, onSubmit, isLoading 
           {/* Stepper */}
           <div className="space-y-2">
             <label className="text-sm font-bold text-[#54433f]">
-              {mode === "add" ? "Quantity to Add" : "New Stock Count"}
+              Quantity to Add
             </label>
             <div className="flex items-center gap-3">
               <button
@@ -126,7 +95,7 @@ function RawMaterialStockModal({ isOpen, material, onClose, onSubmit, isLoading 
                 onClick={() => setQuantity(val)}
                 className="h-10 rounded-xl border border-[#feb234] bg-[#feb234]/10 text-[#624000] text-sm font-bold hover:bg-[#feb234]/25 transition-colors"
               >
-                {mode === "add" ? `+${val}` : val}
+                +{val}
               </button>
             ))}
           </div>
@@ -148,7 +117,7 @@ function RawMaterialStockModal({ isOpen, material, onClose, onSubmit, isLoading 
           {/* Preview */}
           <div className="flex justify-between items-center px-4 py-3 bg-[#f8f3ec] rounded-xl border border-[#ede7e0]">
             <span className="text-sm font-bold text-[#54433f]">
-              {mode === "add" ? "Updated Total" : "New Count"}
+              Updated Total
             </span>
             <span className="text-xl font-bold text-[#1d1c18]">
               {previewStock} pcs
@@ -165,9 +134,9 @@ function RawMaterialStockModal({ isOpen, material, onClose, onSubmit, isLoading 
             </button>
             <button
               onClick={handleConfirm}
-              disabled={isLoading || (mode === "add" && quantity <= 0)}
+              disabled={isLoading || quantity <= 0}
               className={`flex-[2] h-11 rounded-xl text-sm font-extrabold text-[#6d4700] shadow transition-all ${
-                isLoading || (mode === "add" && quantity <= 0)
+                isLoading || quantity <= 0
                   ? "bg-gray-200 cursor-not-allowed text-gray-400"
                   : "bg-[#feb234] hover:bg-[#ffbd4d]"
               }`}

@@ -227,19 +227,19 @@ function OpenSalesPage() {
                 <div className="col-span-2">
                   <span className="text-[12px] font-semibold text-[#54433f]">Total Sales</span>
                   <div className="text-[18px] font-bold text-[#3d0c02]">
-                    {formatMoney(prevOverview.summary?.totalRevenue)}
+                    {formatMoney(prevOverview.orders?.totalRevenueAmount)}
                   </div>
                 </div>
                 <div>
                   <span className="text-[12px] font-semibold text-[#54433f]">Cash</span>
                   <div className="text-[16px] font-semibold text-[#1d1c18]">
-                    {formatMoney(prevOverview.summary?.collections?.cashCollected)}
+                    {formatMoney(prevOverview.payments?.paymentBreakdown?.cash)}
                   </div>
                 </div>
                 <div>
                   <span className="text-[12px] font-semibold text-[#54433f]">UPI</span>
                   <div className="text-[16px] font-semibold text-[#1d1c18]">
-                    {formatMoney(prevOverview.summary?.collections?.upiCollected)}
+                    {formatMoney(prevOverview.payments?.paymentBreakdown?.upi)}
                   </div>
                 </div>
               </div>

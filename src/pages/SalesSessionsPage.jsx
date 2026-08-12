@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import useSalesSessionsQuery from "../hooks/reports/useSalesSessionsQuery";
 
@@ -23,6 +23,12 @@ export default function SalesSessionsPage() {
   const [specificDate, setSpecificDate] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+
+  const maxDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split("T")[0];
+  }, []);
 
   const { data: sessionsData, isLoading, isError } = useSalesSessionsQuery(page, 20);
 
@@ -78,8 +84,11 @@ export default function SalesSessionsPage() {
                 {pagination.totalCount} Total Sessions
               </div>
             </div>
-            <button className="flex items-center gap-2 bg-[#815500] text-white px-5 py-2.5 rounded-lg font-bold shadow-sm hover:brightness-110 active:scale-95 transition-all">
-              <span className="text-sm">⬇</span> Export Report
+            <button
+              onClick={() => window.print()}
+              className="flex items-center gap-2 bg-[#815500] text-white px-5 py-2.5 rounded-lg font-bold shadow-sm hover:brightness-110 active:scale-95 transition-all"
+            >
+              <span className="text-sm">⬇</span> Export PDF
             </button>
           </div>
 
@@ -93,6 +102,7 @@ export default function SalesSessionsPage() {
                       className="bg-[#f8f3ec] border-[#d9c1bc] rounded-lg focus:ring-[#815500] focus:border-[#815500] text-[#1d1c18] px-4 py-2 w-full md:w-64" 
                       type="date"
                       value={specificDate}
+                      max={maxDate}
                       onChange={(e) => setSpecificDate(e.target.value)}
                     />
                     <button 
@@ -115,6 +125,7 @@ export default function SalesSessionsPage() {
                       className="bg-[#f8f3ec] border-[#d9c1bc] rounded-lg focus:ring-[#815500] focus:border-[#815500] text-[#1d1c18] px-4 py-2 w-full" 
                       type="date" 
                       value={startDate}
+                      max={maxDate}
                       onChange={(e) => setStartDate(e.target.value)}
                     />
                   </div>
@@ -124,6 +135,7 @@ export default function SalesSessionsPage() {
                       className="bg-[#f8f3ec] border-[#d9c1bc] rounded-lg focus:ring-[#815500] focus:border-[#815500] text-[#1d1c18] px-4 py-2 w-full" 
                       type="date" 
                       value={endDate}
+                      max={maxDate}
                       onChange={(e) => setEndDate(e.target.value)}
                     />
                   </div>

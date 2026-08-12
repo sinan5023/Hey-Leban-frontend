@@ -64,6 +64,14 @@ export default function SummaryPage() {
             </p>
           </div>
         </div>
+
+        <button
+          type="button"
+          onClick={() => window.print()}
+          className="flex items-center gap-2 rounded-full bg-[#feb234] px-5 py-2 text-[13px] font-bold text-[#3d0c02] transition hover:bg-[#ffd06a]"
+        >
+          <span>⬇</span> Export PDF
+        </button>
       </header>
 
       <main className="min-h-screen px-4 pb-10 pt-[96px] md:px-6">

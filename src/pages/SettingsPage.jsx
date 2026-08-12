@@ -1,8 +1,19 @@
 import { useNavigate } from "react-router-dom";
 import SettingsCard from "../components/settings/SettingsCard";
+import { useAuthStore } from "../store/authStore";
 
 function SettingsPage() {
   const navigate = useNavigate();
+  const logout = useAuthStore((state) => state.logout);
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch {
+      // Ignore
+    }
+    navigate("/login");
+  };
 
   return (
     <div className="min-h-screen bg-[#fef9f2] font-sans text-[#1d1c18]">
@@ -27,34 +38,18 @@ function SettingsPage() {
           </div>
         </div>
 
-        <div className="hidden items-center gap-3 md:flex">
-          {/* <button
+        <div className="flex items-center gap-3">
+          <button
             type="button"
-            className="flex items-center gap-3 rounded-full border border-white/10 bg-white/10 px-4 py-2"
+            onClick={handleLogout}
+            className="flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-600/10 px-4 py-2 text-[14px] font-bold text-red-200 transition hover:bg-red-600/30 hover:text-white"
           >
-            <span className="text-[18px]">🕘</span>
-            <span className="text-[14px] font-bold">Activity</span>
-          </button> */}
-
-          {/* <div className="mx-2 h-10 w-px bg-white/20" /> */}
-
-          {/* <div className="flex items-center gap-3">
-            <div className="text-right">
-              <p className="text-[14px] font-bold leading-none text-white">
-                Admin User
-              </p>
-              <p className="text-[10px] font-medium uppercase tracking-widest text-white/60">
-                Store Manager
-              </p>
-            </div>
-
-            <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-[#feb234] bg-[#e6e2db] text-xs font-bold text-[#3d0c02]">
-              AU
-            </div>
-          </div> */}
+            <span className="text-[16px]">🚪</span>
+            <span>Logout</span>
+          </button>
         </div>
       </header>
-
+ 
       <main className="min-h-screen px-6 pb-6 pt-[80px]">
         <div className="mx-auto max-w-6xl py-10">
           <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">

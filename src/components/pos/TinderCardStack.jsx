@@ -264,7 +264,12 @@ export default function TinderCardStack({
             const baseId = productToBaseId[product.id];
             const ownCartQty = cartQtyMap[product.id] || 0;
 
-            const displayStockCount = inventoryMap[product.id] || 0;
+            // Live effective stock: server stock minus what's already in the cart
+            const serverStock = inventoryMap[product.id] ?? 0;
+            const cartConsumed = baseId
+              ? (baseCartQtyMap[baseId] || 0)
+              : ownCartQty;
+            const displayStockCount = Math.max(0, serverStock - cartConsumed);
 
             return (
               <TinderCard

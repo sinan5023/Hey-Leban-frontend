@@ -131,6 +131,7 @@ export default function BusinessReportPage() {
     return <div className="min-h-screen bg-[#fef9f2] flex items-center justify-center text-red-500">Failed to load business report.</div>;
   }
 
+
   return (
     <div className="min-h-screen bg-[#fef9f2] font-sans text-[#1d1c18]">
       <header className="fixed top-0 w-full z-50 bg-[#0e0100] dark:bg-[#3d0c02] text-white dark:text-[#bf715c] font-sans font-bold shadow-md shadow-[0_4px_8px_-2px_rgba(61,12,2,0.08)] flex justify-between items-center px-6 h-16">

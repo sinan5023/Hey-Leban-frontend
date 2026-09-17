@@ -17,7 +17,6 @@ import OrdersSearchDropdown from "../components/orders/OrdersSearchDropdown";
 import { printBoth, printBill, printKOT } from "../utils/printHelpers";
 import { useInventoryQuery } from "../hooks/inventory/useInventoryQuery";
 import { useRawMaterialsQuery } from "../hooks/rawMaterials/useRawMaterialsQuery";
-import TinderCardStack from "../components/pos/TinderCardStack";
 
 const formatMoney = (value) => {
   const numeric = Number(value || 0);
@@ -60,7 +59,14 @@ const ProductCard = memo(({ product, quantity, stockCount, onAdd }) => {
   );
 });
 
-const CartItemCard = memo(({ item, onIncrease, onDecrease }) => {
+const CartItemCard = memo(({ item, onIncrease, onDecrease, stockCount }) => {
+  // effectiveStock: remaining server stock AFTER what's already in cart
+  // stockCount here is the raw server stock for this item
+  // item.quantity is what's already in cart
+  // So available to add more = stockCount - item.quantity (but stockCount prop already accounts for cart)
+  // We pass effectiveStock directly, so isMaxReached = effectiveStock <= 0
+  const isMaxReached = typeof stockCount === "number" && stockCount <= 0;
+
   return (
     <div className="rounded-xl border border-[#ded9d3] bg-white p-3 shadow-[0_2px_8px_rgba(61,12,2,0.06)]">
       <div className="mb-2 flex items-start justify-between">
@@ -94,7 +100,13 @@ const CartItemCard = memo(({ item, onIncrease, onDecrease }) => {
           <button
             type="button"
             onClick={() => onIncrease(item.id)}
-            className="flex h-7 w-7 items-center justify-center rounded-md border border-[#ded9d3] bg-white text-sm"
+            disabled={isMaxReached}
+            title={isMaxReached ? "Out of stock" : "Add one more"}
+            className={`flex h-7 w-7 items-center justify-center rounded-md border text-sm transition-colors ${
+              isMaxReached
+                ? "border-red-200 bg-red-50 text-red-300 cursor-not-allowed"
+                : "border-[#ded9d3] bg-white"
+            }`}
           >
             +
           </button>
@@ -126,7 +138,6 @@ function POSPage() {
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isSwipeMode, setIsSwipeMode] = useState(false);
 
   const [showDiscountEditor, setShowDiscountEditor] = useState(false);
   const [discountInput, setDiscountInput] = useState("");
@@ -233,7 +244,7 @@ function POSPage() {
 
   const cartItems = useMemo(() => getCartItems(), [products, getCartItems]);
   const subtotal = useMemo(() => getSubtotal(), [products, getSubtotal]);
-  const total = useMemo(() => getTotal(), [products,discountAmount, getTotal]);
+  const total = useMemo(() => getTotal(), [products, discountAmount, getTotal]);
 
   useEffect(() => {
     if (lastSavedOrder?.id) {
@@ -594,14 +605,14 @@ function POSPage() {
 
   const normalizedOrderQuery = debouncedOrder.trim()
     ? (debouncedOrder.trim().toUpperCase().startsWith("ORD-")
-        ? debouncedOrder.trim().toUpperCase()
-        : `ORD-${debouncedOrder.trim().toUpperCase()}`)
+      ? debouncedOrder.trim().toUpperCase()
+      : `ORD-${debouncedOrder.trim().toUpperCase()}`)
     : "";
 
   const normalizedKotQuery = debouncedKot.trim()
     ? (debouncedKot.trim().toUpperCase().startsWith("KOT-")
-        ? debouncedKot.trim().toUpperCase()
-        : `KOT-${debouncedKot.trim().toUpperCase()}`)
+      ? debouncedKot.trim().toUpperCase()
+      : `KOT-${debouncedKot.trim().toUpperCase()}`)
     : "";
 
   const orderSearchQuery = useTicketSearchQuery(
@@ -729,7 +740,7 @@ function POSPage() {
       <div className="flex min-h-screen lg:h-screen flex-col lg:overflow-hidden bg-[#fef9f2] text-[#3d0c02]">
         <header className="flex h-auto min-h-[56px] shrink-0 flex-wrap items-center justify-between gap-y-3 bg-[#3d0c02] px-4 py-3 md:px-6 md:py-0 text-white">
           <div className="flex flex-wrap items-center gap-2 md:gap-4 w-full md:w-auto">
-            
+
             {/* Mobile Hamburger Button */}
             <button
               type="button"
@@ -844,9 +855,8 @@ function POSPage() {
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75"></span>
                 )}
                 <span
-                  className={`relative inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white shadow-sm ring-2 ring-[#3d0c02] ${
-                    unpaidCount > 0 ? "bg-red-500" : "bg-gray-500"
-                  }`}
+                  className={`relative inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white shadow-sm ring-2 ring-[#3d0c02] ${unpaidCount > 0 ? "bg-red-500" : "bg-gray-500"
+                    }`}
                 >
                   {unpaidCount}
                 </span>
@@ -859,11 +869,11 @@ function POSPage() {
         {isMobileMenuOpen && (
           <div className="fixed inset-0 z-50 flex md:hidden">
             {/* Backdrop */}
-            <div 
+            <div
               className="fixed inset-0 bg-black/50 transition-opacity"
               onClick={() => setIsMobileMenuOpen(false)}
             />
-            
+
             {/* Sidebar */}
             <div className="relative flex w-[280px] max-w-[80vw] flex-col bg-[#3d0c02] text-white p-6 shadow-xl h-full animate-in slide-in-from-left duration-200">
               <button
@@ -873,7 +883,7 @@ function POSPage() {
               >
                 ✕
               </button>
-              
+
               <h2 className="text-xl font-bold mb-8">Menu</h2>
 
               <div className="flex flex-col gap-6">
@@ -954,26 +964,7 @@ function POSPage() {
                   type="text"
                 />
               </div>
-              <div className="flex bg-[#ece7e1] p-1 rounded-xl shrink-0 lg:hidden">
-                <button
-                  type="button"
-                  onClick={() => setIsSwipeMode(false)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    !isSwipeMode ? "bg-[#3d0c02] text-white shadow-sm" : "text-[#54433f]"
-                  }`}
-                >
-                  Grid
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsSwipeMode(true)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    isSwipeMode ? "bg-[#3d0c02] text-white shadow-sm" : "text-[#54433f]"
-                  }`}
-                >
-                  Swipe
-                </button>
-              </div>
+
             </div>
 
             <nav className="bg-white/50 p-3 lg:p-4 shrink-0">
@@ -994,8 +985,8 @@ function POSPage() {
                         setSearchQuery("");
                       }}
                       className={`flex shrink-0 min-h-[40px] lg:min-h-[44px] min-w-[80px] lg:min-w-[96px] max-w-[140px] items-center justify-center rounded-full px-3 lg:px-4 py-1.5 lg:py-2 text-center text-xs lg:text-sm font-semibold leading-tight break-words ${selectedCategoryId === category.id
-                          ? "bg-[#E8A020] text-white shadow-md"
-                          : "border border-[#ded9d3] bg-white text-[#3d0c02]"
+                        ? "bg-[#E8A020] text-white shadow-md"
+                        : "border border-[#ded9d3] bg-white text-[#3d0c02]"
                         }`}
                     >
                       {category.name}
@@ -1004,21 +995,10 @@ function POSPage() {
               </div>
             </nav>
 
-            {isSwipeMode ? (
-              <TinderCardStack
-                products={visibleProducts}
-                cartQtyMap={cartQtyMap}
-                inventoryMap={inventoryMap}
-                baseCartQtyMap={baseCartQtyMap}
-                productToBaseId={productToBaseId}
-                addToCart={addToCart}
-              />
-            ) : (
-              <div 
+            <div
                 key={animKey}
-                className={`grid flex-1 grid-cols-2 md:grid-cols-3 content-start gap-4 lg:gap-6 overflow-y-auto p-4 lg:p-6 min-h-[50vh] lg:min-h-0 ${
-                  slideDirection === "left" ? "animate-slide-left" : "animate-slide-right"
-                }`}
+                className={`grid flex-1 grid-cols-2 md:grid-cols-3 content-start gap-4 lg:gap-6 overflow-y-auto p-4 lg:p-6 min-h-[50vh] lg:min-h-0 ${slideDirection === "left" ? "animate-slide-left" : "animate-slide-right"
+                  }`}
                 onTouchStart={onTouchStart}
                 onTouchMove={onTouchMove}
                 onTouchEnd={onTouchEnd}
@@ -1048,7 +1028,12 @@ function POSPage() {
                     const baseId = productToBaseId[product.id];
                     const ownCartQty = cartQtyMap[product.id] || 0;
 
-                    const displayStockCount = inventoryMap[product.id] || 0;
+                    // Live effective stock: server stock minus what's already in the cart
+                    const serverStock = inventoryMap[product.id] ?? 0;
+                    const cartConsumed = baseId
+                      ? (baseCartQtyMap[baseId] || 0)
+                      : ownCartQty;
+                    const displayStockCount = Math.max(0, serverStock - cartConsumed);
 
                     return (
                       <ProductCard
@@ -1061,7 +1046,6 @@ function POSPage() {
                     );
                   })}
               </div>
-            )}
           </section>
 
           {/* ── Right: Cart ── */}
@@ -1073,8 +1057,8 @@ function POSPage() {
                   type="button"
                   onClick={() => setOrderType("DINE_IN")}
                   className={`flex-1 py-2 text-xs font-bold ${orderType === "DINE_IN"
-                      ? "bg-[#E8A020] text-white"
-                      : "text-[#3d0c02]/70"
+                    ? "bg-[#E8A020] text-white"
+                    : "text-[#3d0c02]/70"
                     }`}
                 >
                   Dine in
@@ -1084,8 +1068,8 @@ function POSPage() {
                   type="button"
                   onClick={() => setOrderType("DELIVERY")}
                   className={`flex-1 py-2 text-xs font-bold ${orderType === "DELIVERY"
-                      ? "bg-[#E8A020] text-white"
-                      : "text-[#3d0c02]/70"
+                    ? "bg-[#E8A020] text-white"
+                    : "text-[#3d0c02]/70"
                     }`}
                 >
                   Delivery
@@ -1095,8 +1079,8 @@ function POSPage() {
                   type="button"
                   onClick={() => setOrderType("TAKEOUT")}
                   className={`flex-1 py-2 text-xs font-bold ${orderType === "TAKEOUT"
-                      ? "bg-[#E8A020] text-white"
-                      : "text-[#3d0c02]/70"
+                    ? "bg-[#E8A020] text-white"
+                    : "text-[#3d0c02]/70"
                     }`}
                 >
                   Takeout
@@ -1148,14 +1132,27 @@ function POSPage() {
                   No items in cart
                 </div>
               ) : (
-                cartItems.map((item) => (
-                  <CartItemCard
-                    key={item.id}
-                    item={item}
-                    onIncrease={increaseQty}
-                    onDecrease={decreaseQty}
-                  />
-                ))
+                cartItems.map((item) => {
+                  // Compute effective remaining stock for this cart item
+                  const baseId = productToBaseId[item.id];
+                  const serverStock = inventoryMap[item.id] ?? 0;
+                  // effective stock = server stock - total qty already in cart
+                  // For base-tracked: use base cart total; for individual: use own cart qty
+                  const cartConsumed = baseId
+                    ? (baseCartQtyMap[baseId] || 0)
+                    : (cartQtyMap[item.id] || 0);
+                  const effectiveStock = Math.max(0, serverStock - cartConsumed);
+
+                  return (
+                    <CartItemCard
+                      key={item.id}
+                      item={item}
+                      onIncrease={increaseQty}
+                      onDecrease={decreaseQty}
+                      stockCount={effectiveStock}
+                    />
+                  );
+                })
               )}
             </div>
 
@@ -1261,12 +1258,11 @@ function POSPage() {
                       (cartItems.length === 0 && !lastSavedOrder?.id) ||
                       kotLoading || billLoading || bothLoading
                     }
-                    className={`flex-1 flex h-10 items-center justify-center gap-2 rounded-xl border-2 text-xs font-bold transition-all ${
-                      (cartItems.length === 0 && !lastSavedOrder?.id) ||
-                      kotLoading || billLoading || bothLoading
+                    className={`flex-1 flex h-10 items-center justify-center gap-2 rounded-xl border-2 text-xs font-bold transition-all ${(cartItems.length === 0 && !lastSavedOrder?.id) ||
+                        kotLoading || billLoading || bothLoading
                         ? "cursor-not-allowed border-gray-300 text-gray-400"
                         : "border-[#3d0c02] text-[#3d0c02] hover:bg-[#3d0c02]/5"
-                    }`}
+                      }`}
                   >
                     {kotLoading ? "Printing KOT..." : "Print KOT"}
                   </button>
@@ -1278,12 +1274,11 @@ function POSPage() {
                       (cartItems.length === 0 && !lastSavedOrder?.id) ||
                       kotLoading || billLoading || bothLoading
                     }
-                    className={`flex-1 flex h-10 items-center justify-center gap-2 rounded-xl border-2 text-xs font-bold transition-all ${
-                      (cartItems.length === 0 && !lastSavedOrder?.id) ||
-                      kotLoading || billLoading || bothLoading
+                    className={`flex-1 flex h-10 items-center justify-center gap-2 rounded-xl border-2 text-xs font-bold transition-all ${(cartItems.length === 0 && !lastSavedOrder?.id) ||
+                        kotLoading || billLoading || bothLoading
                         ? "cursor-not-allowed border-gray-300 text-gray-400"
                         : "border-[#3d0c02] text-[#3d0c02] hover:bg-[#3d0c02]/5"
-                    }`}
+                      }`}
                   >
                     {billLoading ? "Printing Bill..." : "Print Bill"}
                   </button>
@@ -1296,12 +1291,11 @@ function POSPage() {
                     (cartItems.length === 0 && !lastSavedOrder?.id) ||
                     kotLoading || billLoading || bothLoading
                   }
-                  className={`flex h-10 w-full items-center justify-center gap-2 rounded-xl border-2 text-xs font-bold transition-all ${
-                    (cartItems.length === 0 && !lastSavedOrder?.id) ||
-                    kotLoading || billLoading || bothLoading
+                  className={`flex h-10 w-full items-center justify-center gap-2 rounded-xl border-2 text-xs font-bold transition-all ${(cartItems.length === 0 && !lastSavedOrder?.id) ||
+                      kotLoading || billLoading || bothLoading
                       ? "cursor-not-allowed border-gray-300 text-gray-400"
                       : "border-[#3d0c02] text-[#3d0c02] hover:bg-[#3d0c02]/5"
-                  }`}
+                    }`}
                 >
                   {bothLoading ? "Printing..." : "Print Bill & KOT"}
                 </button>
@@ -1313,8 +1307,8 @@ function POSPage() {
                     onClick={() => setShowPaymentModal(true)}
                     disabled={cartItems.length === 0}
                     className={`flex-1 rounded-xl text-sm font-extrabold text-white shadow-lg ${cartItems.length === 0
-                        ? "cursor-not-allowed bg-gray-300"
-                        : "bg-[#E8A020]"
+                      ? "cursor-not-allowed bg-gray-300"
+                      : "bg-[#E8A020]"
                       }`}
                   >
                     Collect Payment
@@ -1325,8 +1319,8 @@ function POSPage() {
                     onClick={handleSaveOrder}
                     disabled={cartItems.length === 0 || saveLoading}
                     className={`flex-1 rounded-xl text-sm font-extrabold text-white shadow-lg ${cartItems.length === 0 || saveLoading
-                        ? "cursor-not-allowed bg-gray-300"
-                        : "bg-green-600"
+                      ? "cursor-not-allowed bg-gray-300"
+                      : "bg-green-600"
                       }`}
                   >
                     {saveLoading ? "Saving..." : "Save"}
@@ -1344,15 +1338,15 @@ function POSPage() {
           <div className="pointer-events-none fixed right-6 top-20 z-[200]">
             <div
               className={`pointer-events-auto min-w-[320px] max-w-[420px] rounded-2xl border px-4 py-4 shadow-2xl backdrop-blur-sm transition-all ${toast.type === "success"
-                  ? "border-emerald-200 bg-white text-[#3d0c02]"
-                  : "border-red-200 bg-white text-[#3d0c02]"
+                ? "border-emerald-200 bg-white text-[#3d0c02]"
+                : "border-red-200 bg-white text-[#3d0c02]"
                 }`}
             >
               <div className="flex items-start gap-3">
                 <div
                   className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${toast.type === "success"
-                      ? "bg-emerald-100 text-emerald-600"
-                      : "bg-red-100 text-red-600"
+                    ? "bg-emerald-100 text-emerald-600"
+                    : "bg-red-100 text-red-600"
                     }`}
                 >
                   {toast.type === "success" ? "✓" : "✕"}

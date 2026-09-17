@@ -15,8 +15,6 @@ export default function SummaryPage() {
   const startDate = queryParams.get("startDate");
   const endDate = queryParams.get("endDate");
 
-  const [page, setPage] = useState(1);
-
   const {
     data: summaryData,
     isLoading: summaryLoading,
@@ -37,6 +35,7 @@ export default function SummaryPage() {
   const payments = summaryData?.payments;
   const orderRows = ordersData?.orders ?? [];
   const pagination = ordersData?.pagination;
+
 
   const displayDate = sessionId 
     ? `Session: ${sessionId.slice(-6).toUpperCase()}` 

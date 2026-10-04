@@ -5,10 +5,9 @@ export default function useReportOrdersQuery(filter, page, limit = 20) {
   return useQuery({
     queryKey: ["reports-orders", filter, page, limit],
     queryFn: () => getReportOrders(filter, page, limit),
-    staleTime: 0,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
-    keepPreviousData: true,
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    placeholderData: (previousData) => previousData,
   });
 }

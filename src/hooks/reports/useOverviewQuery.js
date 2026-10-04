@@ -5,9 +5,8 @@ export default function useOverviewQuery(filter) {
   return useQuery({
     queryKey: ["reports-overview", filter],
     queryFn: () => getOverviewReport(filter),
-    staleTime: 0,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 }

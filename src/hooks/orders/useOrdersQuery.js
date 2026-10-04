@@ -7,7 +7,8 @@ export function useOrdersQuery(params, options = {}) {
     queryKey: ["orders", params],
     queryFn: () => fetchOrders(params),
     placeholderData: keepPreviousData,
-    staleTime: 30 * 1000,
-    ...options,              // ← spreads refetchOnMount: "always" when passed
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    ...options,
   });
 }

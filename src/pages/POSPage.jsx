@@ -102,11 +102,10 @@ const CartItemCard = memo(({ item, onIncrease, onDecrease, stockCount }) => {
             onClick={() => onIncrease(item.id)}
             disabled={isMaxReached}
             title={isMaxReached ? "Out of stock" : "Add one more"}
-            className={`flex h-7 w-7 items-center justify-center rounded-md border text-sm transition-colors ${
-              isMaxReached
-                ? "border-red-200 bg-red-50 text-red-300 cursor-not-allowed"
-                : "border-[#ded9d3] bg-white"
-            }`}
+            className={`flex h-7 w-7 items-center justify-center rounded-md border text-sm transition-colors ${isMaxReached
+              ? "border-red-200 bg-red-50 text-red-300 cursor-not-allowed"
+              : "border-[#ded9d3] bg-white"
+              }`}
           >
             +
           </button>
@@ -145,6 +144,7 @@ function POSPage() {
   const todaySession = useSessionStore((state) => state.todaySession);
   const isSessionChecked = useSessionStore((state) => state.isSessionChecked);
   const fetchTodaySession = useSessionStore((state) => state.fetchTodaySession);
+  const isSessionOpen = todaySession?.status === "OPEN";
   const discountAmount = useCartStore((state) => state.discountAmount);
   const setDiscountAmount = useCartStore((state) => state.setDiscountAmount);
 
@@ -242,9 +242,29 @@ function POSPage() {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  const cartItems = useMemo(() => getCartItems(), [products, getCartItems]);
-  const subtotal = useMemo(() => getSubtotal(), [products, getSubtotal]);
-  const total = useMemo(() => getTotal(), [products, discountAmount, getTotal]);
+  const cartItems = useMemo(() => {
+    return Object.values(products).map((product) => ({
+      id: product.id,
+      productId: product.productId,
+      name: product.name,
+      description: product.description || "",
+      total: product.qty * product.price,
+      quantity: product.qty,
+      price: product.price,
+      note: product.note || "",
+    }));
+  }, [products]);
+
+  const subtotal = useMemo(() => {
+    return Object.values(products).reduce(
+      (sum, p) => sum + p.price * p.qty,
+      0
+    );
+  }, [products]);
+
+  const total = useMemo(() => {
+    return Math.max(0, subtotal - Number(discountAmount || 0));
+  }, [subtotal, discountAmount]);
 
   useEffect(() => {
     if (lastSavedOrder?.id) {
@@ -269,19 +289,22 @@ function POSPage() {
   const visibleProducts = useMemo(() => {
     const normalizedSearch = deferredSearchQuery.trim().toLowerCase();
 
+    if (normalizedSearch) {
+      const allProducts = visibleCategories.flatMap(
+        (category) => category.products || []
+      );
+      return allProducts.filter((product) => {
+        const nameMatch = product.name?.toLowerCase().includes(normalizedSearch);
+        const descMatch = product.description?.toLowerCase().includes(normalizedSearch);
+        return nameMatch || descMatch;
+      });
+    }
+
     const selectedCategory = visibleCategories.find(
       (category) => category.id === selectedCategoryId,
     );
 
-    if (!selectedCategory) return [];
-
-    return (selectedCategory.products || []).filter((product) => {
-      if (!normalizedSearch) return true;
-
-      return [product.name, product.description]
-        .filter(Boolean)
-        .some((value) => value.toLowerCase().includes(normalizedSearch));
-    });
+    return selectedCategory ? selectedCategory.products || [] : [];
   }, [visibleCategories, selectedCategoryId, deferredSearchQuery]);
 
   const cartQtyMap = useMemo(() => {
@@ -398,6 +421,15 @@ function POSPage() {
   const handleSaveOrder = async () => {
     setLastKot(null);
 
+    if (!isSessionOpen) {
+      showToast({
+        type: "error",
+        title: "No Session Open",
+        message: "No active sales session found. Please open a sale session first.",
+      });
+      return;
+    }
+
     if (cartItems.length === 0) {
       showToast({
         type: "error",
@@ -414,6 +446,8 @@ function POSPage() {
       setLastSavedOrder(order);
       setIsCartDirty(false);
       queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["inventory"] });
+      queryClient.invalidateQueries({ queryKey: ["rawMaterials"] });
       if (order?.id) {
         queryClient.invalidateQueries({ queryKey: ["order", order.id] });
         queryClient.setQueryData(["order", order.id], order);
@@ -439,6 +473,15 @@ function POSPage() {
   const handlePrintAction = async (type) => {
     // type: "BILL" | "KOT" | "BOTH"
     setLastKot(null);
+
+    if (!isSessionOpen) {
+      showToast({
+        type: "error",
+        title: "No Session Open",
+        message: "No active sales session found. Please open a sale session first.",
+      });
+      return;
+    }
 
     if (cartItems.length === 0 && !lastSavedOrder?.id) {
       showToast({
@@ -511,11 +554,6 @@ function POSPage() {
         message: `${order.orderNo}${kot ? ` • ${kot.kotNo}` : ""}`,
       });
 
-      // Clear cart ONLY for BILL and BOTH print actions
-      if (type === "BILL" || type === "BOTH") {
-        resetCurrentOrderFlow();
-      }
-
       // Background cache refresh
       queryClient.invalidateQueries({ queryKey: ["orders"] });
       queryClient.invalidateQueries({ queryKey: ["inventory"] });
@@ -542,6 +580,15 @@ function POSPage() {
   const [paymentLoading, setPaymentLoading] = useState(false);
 
   const handleConfirmPayment = async (payload) => {
+    if (!isSessionOpen) {
+      showToast({
+        type: "error",
+        title: "No Session Open",
+        message: "No active sales session found. Please open a sale session first.",
+      });
+      throw new Error("No active sales session found.");
+    }
+
     try {
       setPaymentLoading(true);
       const order = await ensureOrderForCart();
@@ -570,6 +617,8 @@ function POSPage() {
         message: `${response.orderNo || order.orderNo} paid successfully.`,
       });
 
+      resetCurrentOrderFlow();
+
       return response;
     } catch (err) {
       const message =
@@ -589,11 +638,11 @@ function POSPage() {
 
   const dueOrdersQuery = useOrdersQuery(
     { status: "DUE", limit: 1 },
-    { staleTime: 30000, refetchInterval: 30000 }
+    { refetchOnWindowFocus: false }
   );
   const openOrdersQuery = useOrdersQuery(
     { status: "OPEN", limit: 1 },
-    { staleTime: 30000, refetchInterval: 30000 }
+    { refetchOnWindowFocus: false }
   );
 
   const dueOrdersCount = dueOrdersQuery.data?.pagination?.total || 0;
@@ -802,22 +851,42 @@ function POSPage() {
           </div>
 
           {/* Desktop Right Side Buttons */}
-          <div className="hidden md:flex items-center gap-4 justify-end">
-            <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-bold uppercase tracking-wide">
-              {todaySession?.status || "No Session"}
-            </span>
+          <div className="hidden md:flex items-center gap-3 justify-end">
+            <button
+              type="button"
+              disabled={isSessionOpen}
+              onClick={() => {
+                if (shouldClearCartOnLeave()) resetCurrentOrderFlow();
+                navigate("/open-sales");
+              }}
+              title={
+                isSessionOpen
+                  ? "Sales session is already open today"
+                  : "Click to open today's sales session"
+              }
+              className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all shadow-sm ${isSessionOpen
+                ? "border border-white/20 bg-white/5 text-white/40 cursor-not-allowed"
+                : "bg-[#feb234] hover:bg-[#e8a020] text-[#3d0c02] font-extrabold shadow-sm active:scale-95"
+                }`}
+            >
+              {isSessionOpen ? "Open Sale Session" : "+ Open Sale Session"}
+            </button>
 
-            {todaySession?.openingCash !== undefined && (
-              <span className="text-sm opacity-80">
-                Opening Cash: ₹{formatMoney(todaySession.openingCash)}
-              </span>
+            {isSessionOpen && todaySession?.openingCash !== undefined && (
+              <div className="flex items-center gap-1.5 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-1.5 text-xs font-bold text-amber-200 shadow-inner">
+                <span>Cash:</span>
+                <span className="text-sm font-extrabold text-white">
+                  ₹{formatMoney(todaySession.openingCash)}
+                </span>
+              </div>
             )}
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 border-l border-white/20 pl-3">
               <button
                 type="button"
-                className="opacity-80"
+                className="opacity-80 hover:opacity-100 transition"
                 onClick={() => window.location.reload()}
+                title="Refresh"
               >
                 ↺
               </button>
@@ -839,7 +908,12 @@ function POSPage() {
                 if (shouldClearCartOnLeave()) resetCurrentOrderFlow();
                 navigate("/close-sales");
               }}
-              className="rounded-xl border border-white/30 px-6 py-2 text-sm font-bold"
+              disabled={!isSessionOpen}
+              title={!isSessionOpen ? "No active session to close" : "Close sale session"}
+              className={`rounded-lg border px-3 py-1.5 text-xs font-bold transition-all ${!isSessionOpen
+                ? "border-white/10 text-white/30 cursor-not-allowed"
+                : "border-white/30 text-white hover:bg-white/10"
+                }`}
             >
               Close Sale
             </button>
@@ -847,7 +921,7 @@ function POSPage() {
             <button
               type="button"
               onClick={goToOrdersPage}
-              className="relative rounded-lg border border-white/30 px-6 py-2 text-sm font-bold"
+              className="relative rounded-lg border border-white/30 px-5 py-2 text-xs font-bold"
             >
               Orders
               <div className="absolute -right-2 -top-2 flex h-5 min-w-[20px] items-center justify-center">
@@ -886,29 +960,36 @@ function POSPage() {
 
               <h2 className="text-xl font-bold mb-8">Menu</h2>
 
-              <div className="flex flex-col gap-6">
-                <div>
-                  <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-bold uppercase tracking-wide">
-                    {todaySession?.status || "No Session"}
-                  </span>
-                  <p className="mt-2 text-sm opacity-80">
-                    {todaySession?.date
-                      ? new Date(todaySession.date).toLocaleDateString()
-                      : "Today"}
-                  </p>
-                  {todaySession?.openingCash !== undefined && (
-                    <p className="mt-1 text-sm opacity-80">
-                      Opening Cash: ₹{formatMoney(todaySession.openingCash)}
-                    </p>
-                  )}
-                </div>
+              <div className="flex flex-col gap-5">
+                <button
+                  type="button"
+                  disabled={isSessionOpen}
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    if (shouldClearCartOnLeave()) resetCurrentOrderFlow();
+                    navigate("/open-sales");
+                  }}
+                  className={`w-full rounded-xl px-4 py-2.5 font-extrabold text-center text-sm transition-all ${isSessionOpen
+                    ? "bg-white/5 text-white/40 cursor-not-allowed border border-white/10"
+                    : "bg-[#feb234] hover:bg-[#e8a020] text-[#3d0c02] shadow-sm active:scale-95"
+                    }`}
+                >
+                  {isSessionOpen ? "Open Sale Session" : "+ Open Sale Session"}
+                </button>
 
-                <div className="h-px bg-white/10 w-full" />
+                {isSessionOpen && todaySession?.openingCash !== undefined && (
+                  <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-2.5 text-xs font-bold text-amber-200">
+                    <span>Cash: </span>
+                    <span className="text-sm font-extrabold text-white">
+                      ₹{formatMoney(todaySession.openingCash)}
+                    </span>
+                  </div>
+                )}
 
                 <button
                   type="button"
                   onClick={goToOrdersPage}
-                  className="flex items-center justify-between rounded-xl bg-white/10 px-4 py-3 font-bold"
+                  className="flex items-center justify-between rounded-xl bg-white/10 px-4 py-3 font-bold text-sm"
                 >
                   <span>Orders</span>
                   {unpaidCount > 0 && (
@@ -920,11 +1001,16 @@ function POSPage() {
 
                 <button
                   type="button"
+                  disabled={!isSessionOpen}
                   onClick={() => {
+                    setIsMobileMenuOpen(false);
                     if (shouldClearCartOnLeave()) resetCurrentOrderFlow();
                     navigate("/close-sales");
                   }}
-                  className="rounded-xl border border-white/30 px-4 py-3 font-bold text-left"
+                  className={`rounded-xl border px-4 py-3 font-bold text-left text-sm ${!isSessionOpen
+                    ? "border-white/10 text-white/30 cursor-not-allowed"
+                    : "border-white/30 text-white"
+                    }`}
                 >
                   Close Sale
                 </button>
@@ -996,56 +1082,56 @@ function POSPage() {
             </nav>
 
             <div
-                key={animKey}
-                className={`grid flex-1 grid-cols-2 md:grid-cols-3 content-start gap-4 lg:gap-6 overflow-y-auto p-4 lg:p-6 min-h-[50vh] lg:min-h-0 ${slideDirection === "left" ? "animate-slide-left" : "animate-slide-right"
-                  }`}
-                onTouchStart={onTouchStart}
-                onTouchMove={onTouchMove}
-                onTouchEnd={onTouchEnd}
-              >
-                {isLoading &&
-                  [1, 2, 3, 4, 5, 6].map((i) => (
-                    <div
-                      key={i}
-                      className="aspect-square animate-pulse rounded-2xl bg-[#ece7e1]"
+              key={animKey}
+              className={`grid flex-1 grid-cols-2 md:grid-cols-3 content-start gap-4 lg:gap-6 overflow-y-auto p-4 lg:p-6 min-h-[50vh] lg:min-h-0 ${slideDirection === "left" ? "animate-slide-left" : "animate-slide-right"
+                }`}
+              onTouchStart={onTouchStart}
+              onTouchMove={onTouchMove}
+              onTouchEnd={onTouchEnd}
+            >
+              {isLoading &&
+                [1, 2, 3, 4, 5, 6].map((i) => (
+                  <div
+                    key={i}
+                    className="aspect-square animate-pulse rounded-2xl bg-[#ece7e1]"
+                  />
+                ))}
+
+              {isError && (
+                <div className="col-span-3 flex h-full items-center justify-center text-red-500">
+                  Failed to load products. Please refresh.
+                </div>
+              )}
+
+              {!isLoading && !isError && visibleProducts.length === 0 && (
+                <div className="col-span-3 flex h-40 items-center justify-center text-[#3d0c02]/40">
+                  No products found
+                </div>
+              )}
+
+              {!isLoading &&
+                visibleProducts.map((product) => {
+                  const baseId = productToBaseId[product.id];
+                  const ownCartQty = cartQtyMap[product.id] || 0;
+
+                  // Live effective stock: server stock minus what's already in the cart
+                  const serverStock = inventoryMap[product.id] ?? 0;
+                  const cartConsumed = baseId
+                    ? (baseCartQtyMap[baseId] || 0)
+                    : ownCartQty;
+                  const displayStockCount = Math.max(0, serverStock - cartConsumed);
+
+                  return (
+                    <ProductCard
+                      key={product.id}
+                      product={product}
+                      quantity={ownCartQty}
+                      stockCount={displayStockCount}
+                      onAdd={addToCart}
                     />
-                  ))}
-
-                {isError && (
-                  <div className="col-span-3 flex h-full items-center justify-center text-red-500">
-                    Failed to load products. Please refresh.
-                  </div>
-                )}
-
-                {!isLoading && !isError && visibleProducts.length === 0 && (
-                  <div className="col-span-3 flex h-40 items-center justify-center text-[#3d0c02]/40">
-                    No products found
-                  </div>
-                )}
-
-                {!isLoading &&
-                  visibleProducts.map((product) => {
-                    const baseId = productToBaseId[product.id];
-                    const ownCartQty = cartQtyMap[product.id] || 0;
-
-                    // Live effective stock: server stock minus what's already in the cart
-                    const serverStock = inventoryMap[product.id] ?? 0;
-                    const cartConsumed = baseId
-                      ? (baseCartQtyMap[baseId] || 0)
-                      : ownCartQty;
-                    const displayStockCount = Math.max(0, serverStock - cartConsumed);
-
-                    return (
-                      <ProductCard
-                        key={product.id}
-                        product={product}
-                        quantity={ownCartQty}
-                        stockCount={displayStockCount}
-                        onAdd={addToCart}
-                      />
-                    );
-                  })}
-              </div>
+                  );
+                })}
+            </div>
           </section>
 
           {/* ── Right: Cart ── */}
@@ -1255,13 +1341,15 @@ function POSPage() {
                     type="button"
                     onClick={() => handlePrintAction("KOT")}
                     disabled={
+                      !isSessionOpen ||
                       (cartItems.length === 0 && !lastSavedOrder?.id) ||
                       kotLoading || billLoading || bothLoading
                     }
-                    className={`flex-1 flex h-10 items-center justify-center gap-2 rounded-xl border-2 text-xs font-bold transition-all ${(cartItems.length === 0 && !lastSavedOrder?.id) ||
-                        kotLoading || billLoading || bothLoading
-                        ? "cursor-not-allowed border-gray-300 text-gray-400"
-                        : "border-[#3d0c02] text-[#3d0c02] hover:bg-[#3d0c02]/5"
+                    className={`flex-1 flex h-10 items-center justify-center gap-2 rounded-xl border-2 text-xs font-bold transition-all ${!isSessionOpen ||
+                      (cartItems.length === 0 && !lastSavedOrder?.id) ||
+                      kotLoading || billLoading || bothLoading
+                      ? "cursor-not-allowed border-gray-300 text-gray-400 opacity-60"
+                      : "border-[#3d0c02] text-[#3d0c02] hover:bg-[#3d0c02]/5"
                       }`}
                   >
                     {kotLoading ? "Printing KOT..." : "Print KOT"}
@@ -1271,13 +1359,15 @@ function POSPage() {
                     type="button"
                     onClick={() => handlePrintAction("BILL")}
                     disabled={
+                      !isSessionOpen ||
                       (cartItems.length === 0 && !lastSavedOrder?.id) ||
                       kotLoading || billLoading || bothLoading
                     }
-                    className={`flex-1 flex h-10 items-center justify-center gap-2 rounded-xl border-2 text-xs font-bold transition-all ${(cartItems.length === 0 && !lastSavedOrder?.id) ||
-                        kotLoading || billLoading || bothLoading
-                        ? "cursor-not-allowed border-gray-300 text-gray-400"
-                        : "border-[#3d0c02] text-[#3d0c02] hover:bg-[#3d0c02]/5"
+                    className={`flex-1 flex h-10 items-center justify-center gap-2 rounded-xl border-2 text-xs font-bold transition-all ${!isSessionOpen ||
+                      (cartItems.length === 0 && !lastSavedOrder?.id) ||
+                      kotLoading || billLoading || bothLoading
+                      ? "cursor-not-allowed border-gray-300 text-gray-400 opacity-60"
+                      : "border-[#3d0c02] text-[#3d0c02] hover:bg-[#3d0c02]/5"
                       }`}
                   >
                     {billLoading ? "Printing Bill..." : "Print Bill"}
@@ -1288,13 +1378,15 @@ function POSPage() {
                   type="button"
                   onClick={() => handlePrintAction("BOTH")}
                   disabled={
+                    !isSessionOpen ||
                     (cartItems.length === 0 && !lastSavedOrder?.id) ||
                     kotLoading || billLoading || bothLoading
                   }
-                  className={`flex h-10 w-full items-center justify-center gap-2 rounded-xl border-2 text-xs font-bold transition-all ${(cartItems.length === 0 && !lastSavedOrder?.id) ||
-                      kotLoading || billLoading || bothLoading
-                      ? "cursor-not-allowed border-gray-300 text-gray-400"
-                      : "border-[#3d0c02] text-[#3d0c02] hover:bg-[#3d0c02]/5"
+                  className={`flex h-10 w-full items-center justify-center gap-2 rounded-xl border-2 text-xs font-bold transition-all ${!isSessionOpen ||
+                    (cartItems.length === 0 && !lastSavedOrder?.id) ||
+                    kotLoading || billLoading || bothLoading
+                    ? "cursor-not-allowed border-gray-300 text-gray-400 opacity-60"
+                    : "border-[#3d0c02] text-[#3d0c02] hover:bg-[#3d0c02]/5"
                     }`}
                 >
                   {bothLoading ? "Printing..." : "Print Bill & KOT"}
@@ -1304,10 +1396,20 @@ function POSPage() {
                 <div className="flex h-12 gap-2 mt-1">
                   <button
                     type="button"
-                    onClick={() => setShowPaymentModal(true)}
-                    disabled={cartItems.length === 0}
-                    className={`flex-1 rounded-xl text-sm font-extrabold text-white shadow-lg ${cartItems.length === 0
-                      ? "cursor-not-allowed bg-gray-300"
+                    onClick={() => {
+                      if (!isSessionOpen) {
+                        showToast({
+                          type: "error",
+                          title: "No Session Open",
+                          message: "No active sales session found. Please open a sale session first.",
+                        });
+                        return;
+                      }
+                      setShowPaymentModal(true);
+                    }}
+                    disabled={cartItems.length === 0 || !isSessionOpen}
+                    className={`flex-1 rounded-xl text-sm font-extrabold text-white shadow-lg ${cartItems.length === 0 || !isSessionOpen
+                      ? "cursor-not-allowed bg-gray-300 opacity-70"
                       : "bg-[#E8A020]"
                       }`}
                   >
@@ -1317,9 +1419,9 @@ function POSPage() {
                   <button
                     type="button"
                     onClick={handleSaveOrder}
-                    disabled={cartItems.length === 0 || saveLoading}
-                    className={`flex-1 rounded-xl text-sm font-extrabold text-white shadow-lg ${cartItems.length === 0 || saveLoading
-                      ? "cursor-not-allowed bg-gray-300"
+                    disabled={cartItems.length === 0 || saveLoading || !isSessionOpen}
+                    className={`flex-1 rounded-xl text-sm font-extrabold text-white shadow-lg ${cartItems.length === 0 || saveLoading || !isSessionOpen
+                      ? "cursor-not-allowed bg-gray-300 opacity-70"
                       : "bg-green-600"
                       }`}
                   >

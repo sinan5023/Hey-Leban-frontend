@@ -29,7 +29,7 @@ const formatPayload = (printType, orderData, kotData = null) => {
     summary: (() => {
       const totalAmount = Number(orderData.totalAmount || 0);
 
-    
+
       const paymentsArray = orderData.payments || [];
       const paidFromPayments = paymentsArray.reduce(
         (sum, p) => sum + Number(p.amount || 0), 0
@@ -88,7 +88,7 @@ const formatPayload = (printType, orderData, kotData = null) => {
 export const sendPrintMessage = (actionType, printType, orderData, kotData = null) => {
   const requestId = `req-${Date.now()}`;
   const payload = formatPayload(printType, orderData, kotData);
-  
+
   if (window.rnBridge && typeof window.rnBridge.send === 'function') {
     window.rnBridge.send({
       type: actionType,
@@ -130,7 +130,7 @@ if (typeof window !== 'undefined') {
     if (response.type === 'PRINT_ACK') {
       console.log(`✅ Bridge Confirmed: The RN app received the payload for request: ${response.requestId}`);
     }
-    
+
     if (response.type === 'PRINT_RESULT') {
       if (response.success) {
         console.log(`🖨️ Physical Print Finished: Request ${response.requestId} completed!`);
@@ -138,7 +138,7 @@ if (typeof window !== 'undefined') {
         console.error(`❌ Print Failed: Request ${response.requestId} - ${response.message}`);
       }
     }
-    
+
     if (response.type === 'PRINTER_STATUS') {
       console.log(`ℹ️ Printer state changed: ${response.message}`);
     }

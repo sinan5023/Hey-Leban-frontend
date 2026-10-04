@@ -57,16 +57,15 @@ function OrdersPage() {
       to: params.to || undefined,
       sortBy: params.sortBy,
       sortDir: params.sortDir,
-    },
-    { refetchOnMount: "always" }
+    }
   );
 
  const selectedOrderQuery = useQuery({
   queryKey: ["order", params.selectedOrderId],
   queryFn: () => fetchOrderById(params.selectedOrderId),
   enabled: !!params.selectedOrderId,
-  refetchOnMount: "always",
-  staleTime: 0,
+  staleTime: 30 * 1000,
+  refetchOnWindowFocus: false,
 });
 
   useEffect(() => {
